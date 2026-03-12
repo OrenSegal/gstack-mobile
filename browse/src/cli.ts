@@ -18,12 +18,38 @@ const BROWSE_PORT = process.env.CONDUCTOR_PORT
   : parseInt(process.env.BROWSE_PORT || '0', 10);
 const INSTANCE_SUFFIX = BROWSE_PORT ? `-${BROWSE_PORT}` : '';
 const STATE_FILE = process.env.BROWSE_STATE_FILE || `/tmp/browse-server${INSTANCE_SUFFIX}.json`;
-// When compiled, import.meta.dir is virtual. Use env var or well-known path.
-const SERVER_SCRIPT = process.env.BROWSE_SERVER_SCRIPT
-  || (import.meta.dir.startsWith('/') && !import.meta.dir.includes('$bunfs')
-    ? path.resolve(import.meta.dir, 'server.ts')
-    : path.resolve(process.env.HOME || '/tmp', '.claude/skills/gstack/browse/src/server.ts'));
 const MAX_START_WAIT = 8000; // 8 seconds to start
+
+export function resolveServerScript(
+  env: Record<string, string | undefined> = process.env,
+  metaDir: string = import.meta.dir,
+  execPath: string = process.execPath
+): string {
+  if (env.BROWSE_SERVER_SCRIPT) {
+    return env.BROWSE_SERVER_SCRIPT;
+  }
+
+  // Dev mode: cli.ts runs directly from browse/src
+  if (metaDir.startsWith('/') && !metaDir.includes('$bunfs')) {
+    const direct = path.resolve(metaDir, 'server.ts');
+    if (fs.existsSync(direct)) {
+      return direct;
+    }
+  }
+
+  // Compiled binary: derive the source tree from browse/dist/browse
+  if (execPath) {
+    const adjacent = path.resolve(path.dirname(execPath), '..', 'src', 'server.ts');
+    if (fs.existsSync(adjacent)) {
+      return adjacent;
+    }
+  }
+
+  // Legacy fallback for user-level installs
+  return path.resolve(env.HOME || '/tmp', '.claude/skills/gstack/browse/src/server.ts');
+}
+
+const SERVER_SCRIPT = resolveServerScript();
 
 interface ServerState {
   pid: number;
@@ -215,7 +241,9 @@ Refs:           After 'snapshot', use @e1, @e2... as selectors:
   await sendCommand(state, command, commandArgs);
 }
 
-main().catch((err) => {
-  console.error(`[browse] ${err.message}`);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((err) => {
+    console.error(`[browse] ${err.message}`);
+    process.exit(1);
+  });
+}

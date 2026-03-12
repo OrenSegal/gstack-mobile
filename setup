@@ -4,11 +4,32 @@ set -e
 
 GSTACK_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILLS_DIR="$(dirname "$GSTACK_DIR")"
+BROWSE_BIN="$GSTACK_DIR/browse/dist/browse"
 
 # 1. Build browse binary if needed
-if [ ! -x "$GSTACK_DIR/browse/dist/browse" ]; then
+NEEDS_BUILD=0
+if [ ! -x "$BROWSE_BIN" ]; then
+  NEEDS_BUILD=1
+elif [ -n "$(find "$GSTACK_DIR/browse/src" -type f -newer "$BROWSE_BIN" -print -quit 2>/dev/null)" ]; then
+  NEEDS_BUILD=1
+elif [ "$GSTACK_DIR/package.json" -nt "$BROWSE_BIN" ]; then
+  NEEDS_BUILD=1
+elif [ -f "$GSTACK_DIR/bun.lock" ] && [ "$GSTACK_DIR/bun.lock" -nt "$BROWSE_BIN" ]; then
+  NEEDS_BUILD=1
+fi
+
+if [ "$NEEDS_BUILD" -eq 1 ]; then
   echo "Building browse binary..."
-  cd "$GSTACK_DIR" && bun install && bun run build
+  (
+    cd "$GSTACK_DIR"
+    bun install
+    bun run build
+  )
+fi
+
+if [ ! -x "$BROWSE_BIN" ]; then
+  echo "gstack setup failed: browse binary missing at $BROWSE_BIN" >&2
+  exit 1
 fi
 
 # 2. Only create skill symlinks if we're inside a .claude/skills directory
@@ -30,12 +51,12 @@ if [ "$SKILLS_BASENAME" = "skills" ]; then
   done
 
   echo "gstack ready."
-  echo "  browse: $GSTACK_DIR/browse/dist/browse"
+  echo "  browse: $BROWSE_BIN"
   if [ ${#linked[@]} -gt 0 ]; then
     echo "  linked skills: ${linked[*]}"
   fi
 else
   echo "gstack ready."
-  echo "  browse: $GSTACK_DIR/browse/dist/browse"
+  echo "  browse: $BROWSE_BIN"
   echo "  (skipped skill symlinks — not inside .claude/skills/)"
 fi
