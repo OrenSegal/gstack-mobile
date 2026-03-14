@@ -12,6 +12,8 @@ allowed-tools:
   - Read
 
 ---
+<!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
+<!-- Regenerate: bun run gen:skill-docs -->
 
 # browse: QA Testing & Dogfooding
 
@@ -99,30 +101,115 @@ $B diff https://staging.app.com https://prod.app.com
 
 ## Snapshot Flags
 
+The snapshot is your primary tool for understanding and interacting with pages.
+
 ```
--i        Interactive elements only (buttons, links, inputs)
+-i        Interactive elements only (buttons, links, inputs) with @e refs
 -c        Compact (no empty structural nodes)
 -d <N>    Limit depth
 -s <sel>  Scope to CSS selector
--D        Diff against previous snapshot
+-D        Diff against previous snapshot (what changed?)
 -a        Annotated screenshot with ref labels
 -o <path> Output path for screenshot
--C        Cursor-interactive elements (@c refs)
+-C        Cursor-interactive elements (@c refs — divs with pointer, onclick)
 ```
 
-Combine: `$B snapshot -i -a -C -o /tmp/annotated.png`
+Combine flags: `$B snapshot -i -a -C -o /tmp/annotated.png`
 
-Use @refs after snapshot: `$B click @e3`, `$B fill @e4 "value"`, `$B click @c1`
+After snapshot, use @refs everywhere:
+```bash
+$B click @e3       $B fill @e4 "value"     $B hover @e1
+$B html @e2        $B css @e5 "color"      $B attrs @e6
+$B click @c1       # cursor-interactive ref (from -C)
+```
+
+Refs are invalidated on navigation — run `snapshot` again after `goto`.
 
 ## Full Command List
 
-**Navigate:** goto, back, forward, reload, url
-**Read:** text, html, links, forms, accessibility
-**Snapshot:** snapshot (with flags above)
-**Interact:** click, fill, select, hover, type, press, scroll, wait, wait --networkidle, wait --load, viewport, upload, cookie-import, dialog-accept, dialog-dismiss
-**Inspect:** js, eval, css, attrs, is, console, console --errors, network, dialog, cookies, storage, perf
-**Visual:** screenshot, pdf, responsive
-**Compare:** diff
-**Multi-step:** chain (pipe JSON array)
-**Tabs:** tabs, tab, newtab, closetab
-**Server:** status, stop, restart
+### Navigation
+| Command | Description |
+|---------|-------------|
+| `back` | History back |
+| `forward` | History forward |
+| `goto <url>` | Navigate to URL |
+| `reload` | Reload page |
+| `url` | Print current URL |
+
+### Reading
+| Command | Description |
+|---------|-------------|
+| `accessibility` | Full ARIA tree |
+| `forms` | Form fields as JSON |
+| `html [selector]` | innerHTML |
+| `links` | All links as "text → href" |
+| `text` | Cleaned page text |
+
+### Interaction
+| Command | Description |
+|---------|-------------|
+| `click <sel>` | Click element |
+| `cookie` | Set cookie |
+| `cookie-import <json>` | Import cookies from JSON file |
+| `cookie-import-browser [browser] [--domain d]` | Import cookies from real browser (opens picker UI, or direct with --domain) |
+| `dialog-accept [text]` | Auto-accept next alert/confirm/prompt |
+| `dialog-dismiss` | Auto-dismiss next dialog |
+| `fill <sel> <val>` | Fill input |
+| `header <name> <value>` | Set custom request header |
+| `hover <sel>` | Hover element |
+| `press <key>` | Press key (Enter, Tab, Escape, etc.) |
+| `scroll [sel]` | Scroll element into view |
+| `select <sel> <val>` | Select dropdown option |
+| `type <text>` | Type into focused element |
+| `upload <sel> <file...>` | Upload file(s) |
+| `useragent <string>` | Set user agent |
+| `viewport <WxH>` | Set viewport size |
+| `wait <sel|--networkidle|--load>` | Wait for element/condition |
+
+### Inspection
+| Command | Description |
+|---------|-------------|
+| `attrs <sel|@ref>` | Element attributes as JSON |
+| `console [--clear|--errors]` | Console messages (--errors filters to error/warning) |
+| `cookies` | All cookies as JSON |
+| `css <sel> <prop>` | Computed CSS value |
+| `dialog [--clear]` | Dialog messages |
+| `eval <file>` | Run JS file |
+| `is <prop> <sel>` | State check (visible/hidden/enabled/disabled/checked/editable/focused) |
+| `js <expr>` | Run JavaScript |
+| `network [--clear]` | Network requests |
+| `perf` | Page load timings |
+| `storage [set k v]` | localStorage + sessionStorage |
+
+### Visual
+| Command | Description |
+|---------|-------------|
+| `diff <url1> <url2>` | Text diff between pages |
+| `pdf [path]` | Save as PDF |
+| `responsive [prefix]` | Mobile/tablet/desktop screenshots |
+| `screenshot [path]` | Save screenshot |
+
+### Snapshot
+| Command | Description |
+|---------|-------------|
+| `snapshot [flags]` | Accessibility tree with @refs |
+
+### Meta
+| Command | Description |
+|---------|-------------|
+| `chain` | Multi-command from JSON stdin |
+
+### Tabs
+| Command | Description |
+|---------|-------------|
+| `closetab [id]` | Close tab |
+| `newtab [url]` | Open new tab |
+| `tab <id>` | Switch to tab |
+| `tabs` | List open tabs |
+
+### Server
+| Command | Description |
+|---------|-------------|
+| `restart` | Restart server |
+| `status` | Health check |
+| `stop` | Shutdown server |

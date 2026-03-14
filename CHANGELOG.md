@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.3.3 — 2026-03-13
+
+### Added
+- **SKILL.md template system** — `.tmpl` files with `{{COMMAND_REFERENCE}}` and `{{SNAPSHOT_FLAGS}}` placeholders, auto-generated from source code at build time. Structurally prevents command drift between docs and code.
+- **Command registry** (`browse/src/commands.ts`) — single source of truth for all browse commands with categories and enriched descriptions. Zero side effects, safe to import from build scripts and tests.
+- **Snapshot flags metadata** (`SNAPSHOT_FLAGS` array in `browse/src/snapshot.ts`) — metadata-driven parser replaces hand-coded switch/case. Adding a flag in one place updates the parser, docs, and tests.
+- **Tier 1 static validation** — 43 tests: parses `$B` commands from SKILL.md code blocks, validates against command registry and snapshot flag metadata
+- **Tier 2 E2E tests** via Agent SDK — spawns real Claude sessions, runs skills, scans for browse errors. Gated by `SKILL_E2E=1` env var (~$0.50/run)
+- **Tier 3 LLM-as-judge evals** — Haiku scores generated docs on clarity/completeness/actionability (threshold ≥4/5), plus regression test vs hand-maintained baseline. Gated by `ANTHROPIC_API_KEY`
+- **`bun run skill:check`** — health dashboard showing all skills, command counts, validation status, template freshness
+- **`bun run dev:skill`** — watch mode that regenerates and validates SKILL.md on every template or source file change
+- **CI workflow** (`.github/workflows/skill-docs.yml`) — runs `gen:skill-docs` on push/PR, fails if generated output differs from committed files
+- `bun run gen:skill-docs` script for manual regeneration
+- `bun run test:eval` for LLM-as-judge evals
+- `test/helpers/skill-parser.ts` — extracts and validates `$B` commands from Markdown
+- `test/helpers/session-runner.ts` — Agent SDK wrapper with error pattern scanning and transcript saving
+- **ARCHITECTURE.md** — design decisions document covering daemon model, security, ref system, logging, crash recovery
+- **Conductor integration** (`conductor.json`) — lifecycle hooks for workspace setup/teardown
+- **`.env` propagation** — `bin/dev-setup` copies `.env` from main worktree into Conductor workspaces automatically
+- `.env.example` template for API key configuration
+
+### Changed
+- Build now runs `gen:skill-docs` before compiling binaries
+- `parseSnapshotArgs` is metadata-driven (iterates `SNAPSHOT_FLAGS` instead of switch/case)
+- `server.ts` imports command sets from `commands.ts` instead of declaring inline
+- SKILL.md and browse/SKILL.md are now generated files (edit the `.tmpl` instead)
+
 ## 0.3.2 — 2026-03-13
 
 ### Fixed

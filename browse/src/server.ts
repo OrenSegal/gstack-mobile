@@ -110,28 +110,9 @@ const idleCheckInterval = setInterval(() => {
   }
 }, 60_000);
 
-// ─── Command Sets (exported for chain command) ──────────────────
-export const READ_COMMANDS = new Set([
-  'text', 'html', 'links', 'forms', 'accessibility',
-  'js', 'eval', 'css', 'attrs',
-  'console', 'network', 'cookies', 'storage', 'perf',
-  'dialog', 'is',
-]);
-
-export const WRITE_COMMANDS = new Set([
-  'goto', 'back', 'forward', 'reload',
-  'click', 'fill', 'select', 'hover', 'type', 'press', 'scroll', 'wait',
-  'viewport', 'cookie', 'cookie-import', 'cookie-import-browser', 'header', 'useragent',
-  'upload', 'dialog-accept', 'dialog-dismiss',
-]);
-
-export const META_COMMANDS = new Set([
-  'tabs', 'tab', 'newtab', 'closetab',
-  'status', 'stop', 'restart',
-  'screenshot', 'pdf', 'responsive',
-  'chain', 'diff',
-  'url', 'snapshot',
-]);
+// ─── Command Sets (from commands.ts — single source of truth) ───
+import { READ_COMMANDS, WRITE_COMMANDS, META_COMMANDS } from './commands';
+export { READ_COMMANDS, WRITE_COMMANDS, META_COMMANDS };
 
 // ─── Server ────────────────────────────────────────────────────
 const browserManager = new BrowserManager();
