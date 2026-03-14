@@ -8,6 +8,22 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
+
+const GSTACK_DEV_DIR = path.join(os.homedir(), '.gstack-dev');
+const HEARTBEAT_PATH = path.join(GSTACK_DEV_DIR, 'e2e-live.json');
+
+/** Sanitize test name for use as filename: strip leading slashes, replace / with - */
+export function sanitizeTestName(name: string): string {
+  return name.replace(/^\/+/, '').replace(/\//g, '-');
+}
+
+/** Atomic write: write to .tmp then rename. Non-fatal on error. */
+function atomicWriteSync(filePath: string, data: string): void {
+  const tmp = filePath + '.tmp';
+  fs.writeFileSync(tmp, data);
+  fs.renameSync(tmp, filePath);
+}
 
 export interface CostEstimate {
   inputChars: number;
@@ -98,6 +114,8 @@ export async function runSkillTest(options: {
   maxTurns?: number;
   allowedTools?: string[];
   timeout?: number;
+  testName?: string;
+  runId?: string;
 }): Promise<SkillTestResult> {
   const {
     prompt,
@@ -105,9 +123,22 @@ export async function runSkillTest(options: {
     maxTurns = 15,
     allowedTools = ['Bash', 'Read', 'Write'],
     timeout = 120_000,
+    testName,
+    runId,
   } = options;
 
   const startTime = Date.now();
+  const startedAt = new Date().toISOString();
+
+  // Set up per-run log directory if runId is provided
+  let runDir: string | null = null;
+  const safeName = testName ? sanitizeTestName(testName) : null;
+  if (runId) {
+    try {
+      runDir = path.join(GSTACK_DEV_DIR, 'e2e-runs', runId);
+      fs.mkdirSync(runDir, { recursive: true });
+    } catch { /* non-fatal */ }
+  }
 
   // Spawn claude -p with streaming NDJSON output. Prompt piped via stdin to
   // avoid shell escaping issues. --verbose is required for stream-json mode.
@@ -161,7 +192,7 @@ export async function runSkillTest(options: {
         if (!line.trim()) continue;
         collectedLines.push(line);
 
-        // Real-time progress to stderr
+        // Real-time progress to stderr + persistent logs
         try {
           const event = JSON.parse(line);
           if (event.type === 'assistant') {
@@ -171,13 +202,40 @@ export async function runSkillTest(options: {
               if (item.type === 'tool_use') {
                 liveToolCount++;
                 const elapsed = Math.round((Date.now() - startTime) / 1000);
-                process.stderr.write(
-                  `  [${elapsed}s] turn ${liveTurnCount} tool #${liveToolCount}: ${item.name}(${truncate(JSON.stringify(item.input || {}), 80)})\n`
-                );
+                const progressLine = `  [${elapsed}s] turn ${liveTurnCount} tool #${liveToolCount}: ${item.name}(${truncate(JSON.stringify(item.input || {}), 80)})\n`;
+                process.stderr.write(progressLine);
+
+                // Persist progress.log
+                if (runDir) {
+                  try { fs.appendFileSync(path.join(runDir, 'progress.log'), progressLine); } catch { /* non-fatal */ }
+                }
+
+                // Write heartbeat (atomic)
+                if (runId && testName) {
+                  try {
+                    const toolDesc = `${item.name}(${truncate(JSON.stringify(item.input || {}), 60)})`;
+                    atomicWriteSync(HEARTBEAT_PATH, JSON.stringify({
+                      runId,
+                      startedAt,
+                      currentTest: testName,
+                      status: 'running',
+                      turn: liveTurnCount,
+                      toolCount: liveToolCount,
+                      lastTool: toolDesc,
+                      lastToolAt: new Date().toISOString(),
+                      elapsedSec: elapsed,
+                    }, null, 2) + '\n');
+                  } catch { /* non-fatal */ }
+                }
               }
             }
           }
         } catch { /* skip — parseNDJSON will handle it later */ }
+
+        // Append raw NDJSON line to per-test transcript file
+        if (runDir && safeName) {
+          try { fs.appendFileSync(path.join(runDir, `${safeName}.ndjson`), line + '\n'); } catch { /* non-fatal */ }
+        }
       }
     }
   } catch { /* stream read error — fall through to exit code handling */ }
@@ -226,19 +284,24 @@ export async function runSkillTest(options: {
     }
   }
 
-  // Save transcript on failure
+  // Save failure transcript to persistent run directory (or fallback to workingDirectory)
   if (browseErrors.length > 0 || exitReason !== 'success') {
     try {
-      const transcriptDir = path.join(workingDirectory, '.gstack', 'test-transcripts');
-      fs.mkdirSync(transcriptDir, { recursive: true });
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const failureDir = runDir || path.join(workingDirectory, '.gstack', 'test-transcripts');
+      fs.mkdirSync(failureDir, { recursive: true });
+      const failureName = safeName
+        ? `${safeName}-failure.json`
+        : `e2e-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
       fs.writeFileSync(
-        path.join(transcriptDir, `e2e-${timestamp}.json`),
+        path.join(failureDir, failureName),
         JSON.stringify({
           prompt: prompt.slice(0, 500),
+          testName: testName || 'unknown',
           exitReason,
           browseErrors,
           duration,
+          turnAtTimeout: timedOut ? liveTurnCount : undefined,
+          lastToolCall: liveToolCount > 0 ? `tool #${liveToolCount}` : undefined,
           stderr: stderr.slice(0, 2000),
           result: resultLine ? { type: resultLine.type, subtype: resultLine.subtype, result: resultLine.result?.slice?.(0, 500) } : null,
         }, null, 2),

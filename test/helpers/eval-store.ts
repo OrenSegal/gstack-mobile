@@ -37,6 +37,11 @@ export interface EvalTestEntry {
   judge_scores?: Record<string, number>;
   judge_reasoning?: string;
 
+  // Machine-readable diagnostics
+  exit_reason?: string;       // 'success' | 'timeout' | 'error_max_turns' | 'exit_code_N'
+  timeout_at_turn?: number;   // which turn was active when timeout hit
+  last_tool_call?: string;    // e.g. "Write(review-output.md)"
+
   // Outcome eval
   detection_rate?: number;
   false_positives?: number;
@@ -61,6 +66,7 @@ export interface EvalResult {
   total_cost_usd: number;
   total_duration_ms: number;
   tests: EvalTestEntry[];
+  _partial?: boolean;  // true for incremental saves, absent in final
 }
 
 export interface TestDelta {
@@ -374,6 +380,41 @@ export class EvalCollector {
 
   addTest(entry: EvalTestEntry): void {
     this.tests.push(entry);
+    this.savePartial();
+  }
+
+  /** Write incremental results after each test. Atomic write, non-fatal. */
+  savePartial(): void {
+    try {
+      const git = getGitInfo();
+      const version = getVersion();
+      const totalCost = this.tests.reduce((s, t) => s + t.cost_usd, 0);
+      const totalDuration = this.tests.reduce((s, t) => s + t.duration_ms, 0);
+      const passed = this.tests.filter(t => t.passed).length;
+
+      const partial: EvalResult = {
+        schema_version: SCHEMA_VERSION,
+        version,
+        branch: git.branch,
+        git_sha: git.sha,
+        timestamp: new Date().toISOString(),
+        hostname: os.hostname(),
+        tier: this.tier,
+        total_tests: this.tests.length,
+        passed,
+        failed: this.tests.length - passed,
+        total_cost_usd: Math.round(totalCost * 100) / 100,
+        total_duration_ms: totalDuration,
+        tests: this.tests,
+        _partial: true,
+      };
+
+      fs.mkdirSync(this.evalDir, { recursive: true });
+      const partialPath = path.join(this.evalDir, '_partial-e2e.json');
+      const tmp = partialPath + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(partial, null, 2) + '\n');
+      fs.renameSync(tmp, partialPath);
+    } catch { /* non-fatal — partial saves are best-effort */ }
   }
 
   async finalize(): Promise<string> {
@@ -402,6 +443,9 @@ export class EvalCollector {
       total_duration_ms: totalDuration,
       tests: this.tests,
     };
+
+    // Delete partial file now that we're writing the final
+    try { fs.unlinkSync(path.join(this.evalDir, '_partial-e2e.json')); } catch { /* may not exist */ }
 
     // Write eval file
     fs.mkdirSync(this.evalDir, { recursive: true });
