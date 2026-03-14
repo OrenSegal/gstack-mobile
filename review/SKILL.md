@@ -13,12 +13,14 @@ allowed-tools:
   - Glob
   - AskUserQuestion
 ---
+<!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
+<!-- Regenerate: bun run gen:skill-docs -->
 
 ## Update Check (run first)
 
 ```bash
 _UPD=$(~/.claude/skills/gstack/bin/gstack-update-check 2>/dev/null || .claude/skills/gstack/bin/gstack-update-check 2>/dev/null || true)
-[ -n "$_UPD" ] && echo "$_UPD"
+[ -n "$_UPD" ] && echo "$_UPD" || true
 ```
 
 If output shows `UPGRADE_AVAILABLE <old> <new>`: read `~/.claude/skills/gstack/gstack-upgrade/SKILL.md` and follow the "Inline upgrade flow" (AskUserQuestion → upgrade if yes, `touch ~/.gstack/last-update-check` if no). If `JUST_UPGRADED <from> <to>`: tell user "Running gstack v{to} (just updated!)" and continue.
@@ -93,7 +95,7 @@ After outputting your own findings, if Greptile comments were classified in Step
 
 **Include a Greptile summary in your output header:** `+ N Greptile comments (X valid, Y fixed, Z FP)`
 
-1. **VALID & ACTIONABLE comments:** These are already included in your CRITICAL findings — they follow the same AskUserQuestion flow (A: Fix it now, B: Acknowledge, C: False positive). If the user chooses C (false positive), post a reply using the appropriate API from the triage doc and save the pattern to `~/.gstack/greptile-history.md` (type: fp).
+1. **VALID & ACTIONABLE comments:** These are already included in your CRITICAL findings — they follow the same AskUserQuestion flow (A: Fix it now, B: Acknowledge, C: False positive). If the user chooses C (false positive), post a reply using the appropriate API from the triage doc and save the pattern to both per-project and global greptile-history (see greptile-triage.md for write details).
 
 2. **FALSE POSITIVE comments:** Present each one via AskUserQuestion:
    - Show the Greptile comment: file:line (or [top-level]) + body summary + permalink URL
@@ -103,11 +105,11 @@ After outputting your own findings, if Greptile comments were classified in Step
      - B) Fix it anyway (if low-effort and harmless)
      - C) Ignore — don't reply, don't fix
 
-   If the user chooses A, post a reply using the appropriate API from the triage doc and save the pattern to `~/.gstack/greptile-history.md` (type: fp).
+   If the user chooses A, post a reply using the appropriate API from the triage doc and save the pattern to both per-project and global greptile-history (see greptile-triage.md for write details).
 
 3. **VALID BUT ALREADY FIXED comments:** Reply acknowledging the catch — no AskUserQuestion needed:
    - Post reply: `"Good catch — already fixed in <commit-sha>."`
-   - Save to `~/.gstack/greptile-history.md` (type: already-fixed)
+   - Save to both per-project and global greptile-history (see greptile-triage.md for write details)
 
 4. **SUPPRESSED comments:** Skip silently — these are known false positives from previous triage.
 
