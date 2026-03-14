@@ -152,6 +152,52 @@ describe('Generated SKILL.md freshness', () => {
   });
 });
 
+// --- Update check preamble validation ---
+
+describe('Update check preamble', () => {
+  const skillsWithUpdateCheck = [
+    'SKILL.md', 'browse/SKILL.md', 'qa/SKILL.md',
+    'setup-browser-cookies/SKILL.md',
+    'ship/SKILL.md', 'review/SKILL.md',
+    'plan-ceo-review/SKILL.md', 'plan-eng-review/SKILL.md',
+    'retro/SKILL.md',
+  ];
+
+  for (const skill of skillsWithUpdateCheck) {
+    test(`${skill} update check line ends with || true`, () => {
+      const content = fs.readFileSync(path.join(ROOT, skill), 'utf-8');
+      // The second line of the bash block must end with || true
+      // to avoid exit code 1 when _UPD is empty (up to date)
+      const match = content.match(/\[ -n "\$_UPD" \].*$/m);
+      expect(match).not.toBeNull();
+      expect(match![0]).toContain('|| true');
+    });
+  }
+
+  test('all skills with update check are generated from .tmpl', () => {
+    for (const skill of skillsWithUpdateCheck) {
+      const tmplPath = path.join(ROOT, skill + '.tmpl');
+      expect(fs.existsSync(tmplPath)).toBe(true);
+    }
+  });
+
+  test('update check bash block exits 0 when up to date', () => {
+    // Simulate the exact preamble command from SKILL.md
+    const result = Bun.spawnSync(['bash', '-c',
+      '_UPD=$(echo "" || true); [ -n "$_UPD" ] && echo "$_UPD" || true'
+    ], { stdout: 'pipe', stderr: 'pipe' });
+    expect(result.exitCode).toBe(0);
+  });
+
+  test('update check bash block exits 0 when upgrade available', () => {
+    const result = Bun.spawnSync(['bash', '-c',
+      '_UPD=$(echo "UPGRADE_AVAILABLE 0.3.3 0.4.0" || true); [ -n "$_UPD" ] && echo "$_UPD" || true'
+    ], { stdout: 'pipe', stderr: 'pipe' });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.toString().trim()).toBe('UPGRADE_AVAILABLE 0.3.3 0.4.0');
+  });
+});
+
 // --- Part 7: Cross-skill path consistency (A1) ---
 
 describe('Cross-skill path consistency', () => {
