@@ -510,8 +510,253 @@ CRITICAL RULES:
     await runPlantedBugEval('qa-eval-checkout.html', 'qa-eval-checkout-ground-truth.json', 'b8-checkout');
   }, 360_000);
 
-  // Ship E2E deferred — too complex (requires full git + test suite + VERSION + CHANGELOG)
+  // Ship E2E deferred — destructive (pushes to remote, creates PRs, modifies VERSION/CHANGELOG)
   test.todo('/ship completes without browse errors');
+});
+
+// --- Plan CEO Review E2E ---
+
+describeE2E('Plan CEO Review E2E', () => {
+  let planDir: string;
+
+  beforeAll(() => {
+    planDir = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-e2e-plan-ceo-'));
+
+    // Create a simple plan document for the agent to review
+    fs.writeFileSync(path.join(planDir, 'plan.md'), `# Plan: Add User Dashboard
+
+## Context
+We're building a new user dashboard that shows recent activity, notifications, and quick actions.
+
+## Changes
+1. New React component \`UserDashboard\` in \`src/components/\`
+2. REST API endpoint \`GET /api/dashboard\` returning user stats
+3. PostgreSQL query for activity aggregation
+4. Redis cache layer for dashboard data (5min TTL)
+
+## Architecture
+- Frontend: React + TailwindCSS
+- Backend: Express.js REST API
+- Database: PostgreSQL with existing user/activity tables
+- Cache: Redis for dashboard aggregates
+
+## Open questions
+- Should we use WebSocket for real-time updates?
+- How do we handle users with 100k+ activity records?
+`);
+
+    // Copy plan-ceo-review skill
+    fs.mkdirSync(path.join(planDir, 'plan-ceo-review'), { recursive: true });
+    fs.copyFileSync(
+      path.join(ROOT, 'plan-ceo-review', 'SKILL.md'),
+      path.join(planDir, 'plan-ceo-review', 'SKILL.md'),
+    );
+  });
+
+  afterAll(() => {
+    try { fs.rmSync(planDir, { recursive: true, force: true }); } catch {}
+  });
+
+  test('/plan-ceo-review produces structured review output', async () => {
+    const result = await runSkillTest({
+      prompt: `Read plan-ceo-review/SKILL.md for instructions on how to do a CEO-mode plan review.
+
+Read plan.md — that's the plan to review.
+
+Choose HOLD SCOPE mode. Skip any AskUserQuestion calls — this is non-interactive.
+Write your complete review to ${planDir}/review-output.md
+
+Include all sections the SKILL.md specifies. Focus on architecture, error handling, security, and performance.`,
+      workingDirectory: planDir,
+      maxTurns: 15,
+      timeout: 120_000,
+    });
+
+    logCost('/plan-ceo-review', result);
+    recordE2E('/plan-ceo-review', 'Plan CEO Review E2E', result);
+    expect(result.exitReason).toBe('success');
+
+    // Verify the review was written
+    const reviewPath = path.join(planDir, 'review-output.md');
+    if (fs.existsSync(reviewPath)) {
+      const review = fs.readFileSync(reviewPath, 'utf-8');
+      expect(review.length).toBeGreaterThan(200);
+    }
+  }, 180_000);
+});
+
+// --- Plan Eng Review E2E ---
+
+describeE2E('Plan Eng Review E2E', () => {
+  let planDir: string;
+
+  beforeAll(() => {
+    planDir = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-e2e-plan-eng-'));
+
+    // Create a plan with more engineering detail
+    fs.writeFileSync(path.join(planDir, 'plan.md'), `# Plan: Migrate Auth to JWT
+
+## Context
+Replace session-cookie auth with JWT tokens. Currently using express-session + Redis store.
+
+## Changes
+1. Add \`jsonwebtoken\` package
+2. New middleware \`auth/jwt-verify.ts\` replacing \`auth/session-check.ts\`
+3. Login endpoint returns { accessToken, refreshToken }
+4. Refresh endpoint rotates tokens
+5. Migration script to invalidate existing sessions
+
+## Files Modified
+| File | Change |
+|------|--------|
+| auth/jwt-verify.ts | NEW: JWT verification middleware |
+| auth/session-check.ts | DELETED |
+| routes/login.ts | Return JWT instead of setting cookie |
+| routes/refresh.ts | NEW: Token refresh endpoint |
+| middleware/index.ts | Swap session-check for jwt-verify |
+
+## Error handling
+- Expired token: 401 with \`token_expired\` code
+- Invalid token: 401 with \`invalid_token\` code
+- Refresh with revoked token: 403
+
+## Not in scope
+- OAuth/OIDC integration
+- Rate limiting on refresh endpoint
+`);
+
+    // Copy plan-eng-review skill
+    fs.mkdirSync(path.join(planDir, 'plan-eng-review'), { recursive: true });
+    fs.copyFileSync(
+      path.join(ROOT, 'plan-eng-review', 'SKILL.md'),
+      path.join(planDir, 'plan-eng-review', 'SKILL.md'),
+    );
+  });
+
+  afterAll(() => {
+    try { fs.rmSync(planDir, { recursive: true, force: true }); } catch {}
+  });
+
+  test('/plan-eng-review produces structured review output', async () => {
+    const result = await runSkillTest({
+      prompt: `Read plan-eng-review/SKILL.md for instructions on how to do an engineering plan review.
+
+Read plan.md — that's the plan to review.
+
+Choose SMALL CHANGE mode. Skip any AskUserQuestion calls — this is non-interactive.
+Write your complete review to ${planDir}/review-output.md
+
+Include architecture, code quality, tests, and performance sections.`,
+      workingDirectory: planDir,
+      maxTurns: 15,
+      timeout: 120_000,
+    });
+
+    logCost('/plan-eng-review', result);
+    recordE2E('/plan-eng-review', 'Plan Eng Review E2E', result);
+    expect(result.exitReason).toBe('success');
+
+    // Verify the review was written
+    const reviewPath = path.join(planDir, 'review-output.md');
+    if (fs.existsSync(reviewPath)) {
+      const review = fs.readFileSync(reviewPath, 'utf-8');
+      expect(review.length).toBeGreaterThan(200);
+    }
+  }, 180_000);
+});
+
+// --- Retro E2E ---
+
+describeE2E('Retro E2E', () => {
+  let retroDir: string;
+
+  beforeAll(() => {
+    retroDir = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-e2e-retro-'));
+    const { spawnSync } = require('child_process');
+    const run = (cmd: string, args: string[]) =>
+      spawnSync(cmd, args, { cwd: retroDir, stdio: 'pipe', timeout: 5000 });
+
+    // Create a git repo with varied commit history
+    run('git', ['init']);
+    run('git', ['config', 'user.email', 'dev@example.com']);
+    run('git', ['config', 'user.name', 'Dev']);
+
+    // Day 1 commits
+    fs.writeFileSync(path.join(retroDir, 'app.ts'), 'console.log("hello");\n');
+    run('git', ['add', 'app.ts']);
+    run('git', ['commit', '-m', 'feat: initial app setup', '--date', '2026-03-10T09:00:00']);
+
+    fs.writeFileSync(path.join(retroDir, 'auth.ts'), 'export function login() {}\n');
+    run('git', ['add', 'auth.ts']);
+    run('git', ['commit', '-m', 'feat: add auth module', '--date', '2026-03-10T11:00:00']);
+
+    // Day 2 commits
+    fs.writeFileSync(path.join(retroDir, 'app.ts'), 'import { login } from "./auth";\nconsole.log("hello");\nlogin();\n');
+    run('git', ['add', 'app.ts']);
+    run('git', ['commit', '-m', 'fix: wire up auth to app', '--date', '2026-03-11T10:00:00']);
+
+    fs.writeFileSync(path.join(retroDir, 'test.ts'), 'import { test } from "bun:test";\ntest("login", () => {});\n');
+    run('git', ['add', 'test.ts']);
+    run('git', ['commit', '-m', 'test: add login test', '--date', '2026-03-11T14:00:00']);
+
+    // Day 3 commits
+    fs.writeFileSync(path.join(retroDir, 'api.ts'), 'export function getUsers() { return []; }\n');
+    run('git', ['add', 'api.ts']);
+    run('git', ['commit', '-m', 'feat: add users API endpoint', '--date', '2026-03-12T09:30:00']);
+
+    fs.writeFileSync(path.join(retroDir, 'README.md'), '# My App\nA test application.\n');
+    run('git', ['add', 'README.md']);
+    run('git', ['commit', '-m', 'docs: add README', '--date', '2026-03-12T16:00:00']);
+
+    // Copy retro skill
+    fs.mkdirSync(path.join(retroDir, 'retro'), { recursive: true });
+    fs.copyFileSync(
+      path.join(ROOT, 'retro', 'SKILL.md'),
+      path.join(retroDir, 'retro', 'SKILL.md'),
+    );
+  });
+
+  afterAll(() => {
+    try { fs.rmSync(retroDir, { recursive: true, force: true }); } catch {}
+  });
+
+  test('/retro produces analysis from git history', async () => {
+    const result = await runSkillTest({
+      prompt: `Read retro/SKILL.md for instructions on how to run a retrospective.
+
+Run /retro for the last 7 days of this git repo. Skip any AskUserQuestion calls — this is non-interactive.
+Write your retrospective report to ${retroDir}/retro-output.md
+
+Analyze the git history and produce the narrative report as described in the SKILL.md.`,
+      workingDirectory: retroDir,
+      maxTurns: 15,
+      timeout: 120_000,
+    });
+
+    logCost('/retro', result);
+    recordE2E('/retro', 'Retro E2E', result);
+    expect(result.exitReason).toBe('success');
+
+    // Verify the retro was written
+    const retroPath = path.join(retroDir, 'retro-output.md');
+    if (fs.existsSync(retroPath)) {
+      const retro = fs.readFileSync(retroPath, 'utf-8');
+      expect(retro.length).toBeGreaterThan(100);
+    }
+  }, 180_000);
+});
+
+// --- Deferred skill E2E tests (destructive or require interactive UI) ---
+
+describeE2E('Deferred skill E2E', () => {
+  // Ship is destructive: pushes to remote, creates PRs, modifies VERSION/CHANGELOG
+  test.todo('/ship completes full workflow');
+
+  // Setup-browser-cookies requires interactive browser picker UI
+  test.todo('/setup-browser-cookies imports cookies');
+
+  // Gstack-upgrade is destructive: modifies skill installation directory
+  test.todo('/gstack-upgrade completes upgrade flow');
 });
 
 // Module-level afterAll — finalize eval collector after all tests complete
