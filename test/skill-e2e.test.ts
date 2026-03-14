@@ -5,6 +5,7 @@ import { outcomeJudge } from './helpers/llm-judge';
 import { EvalCollector } from './helpers/eval-store';
 import type { EvalTestEntry } from './helpers/eval-store';
 import { startTestServer } from '../browse/test/test-server';
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -114,6 +115,17 @@ function dumpOutcomeDiagnostic(dir: string, label: string, report: string, judge
       JSON.stringify({ label, report, judgeResult }, null, 2),
     );
   } catch { /* non-fatal */ }
+}
+
+// Fail fast if Anthropic API is unreachable — don't burn through 13 tests getting ConnectionRefused
+if (evalsEnabled) {
+  const check = spawnSync('sh', ['-c', 'echo "ping" | claude -p --max-turns 1 --output-format stream-json --verbose --dangerously-skip-permissions'], {
+    stdio: 'pipe', timeout: 30_000,
+  });
+  const output = check.stdout?.toString() || '';
+  if (output.includes('ConnectionRefused') || output.includes('Unable to connect')) {
+    throw new Error('Anthropic API unreachable — aborting E2E suite. Fix connectivity and retry.');
+  }
 }
 
 describeE2E('Skill E2E tests', () => {
