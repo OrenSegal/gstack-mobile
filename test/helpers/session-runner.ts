@@ -1,11 +1,11 @@
 /**
- * Agent SDK wrapper for skill E2E testing.
+ * Claude CLI subprocess runner for skill E2E testing.
  *
- * Spawns a Claude Code session, runs a prompt, collects messages,
- * scans tool_result messages for browse errors.
+ * Spawns `claude -p` as a completely independent process (not via Agent SDK),
+ * so it works inside Claude Code sessions. Pipes prompt via stdin, collects
+ * JSON output, scans for browse errors.
  */
 
-import { query } from '@anthropic-ai/claude-agent-sdk';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -13,7 +13,7 @@ export interface CostEstimate {
   inputChars: number;
   outputChars: number;
   estimatedTokens: number;
-  estimatedCost: number;  // USD (approximate)
+  estimatedCost: number;  // USD
   turnsUsed: number;
 }
 
@@ -23,6 +23,7 @@ export interface SkillTestResult {
   browseErrors: string[];
   exitReason: string;
   duration: number;
+  output: string;
   costEstimate: CostEstimate;
 }
 
@@ -41,14 +42,6 @@ export async function runSkillTest(options: {
   allowedTools?: string[];
   timeout?: number;
 }): Promise<SkillTestResult> {
-  // Fail fast if running inside an Agent SDK session — nested sessions hang
-  if (process.env.CLAUDECODE || process.env.CLAUDE_CODE_ENTRYPOINT) {
-    throw new Error(
-      'Cannot run E2E skill tests inside a Claude Code session. ' +
-      'Run from a plain terminal: EVALS=1 bun test test/skill-e2e.test.ts'
-    );
-  }
-
   const {
     prompt,
     workingDirectory,
@@ -57,94 +50,100 @@ export async function runSkillTest(options: {
     timeout = 120_000,
   } = options;
 
-  const messages: any[] = [];
-  const toolCalls: SkillTestResult['toolCalls'] = [];
-  const browseErrors: string[] = [];
-  let exitReason = 'unknown';
-
   const startTime = Date.now();
 
-  // Strip all Claude-related env vars to allow nested sessions.
-  // Without this, the child claude process thinks it's an SDK child
-  // and hangs waiting for parent IPC instead of running independently.
-  const env: Record<string, string | undefined> = {};
-  for (const [key] of Object.entries(process.env)) {
-    if (key.startsWith('CLAUDE') || key.startsWith('CLAUDECODE')) {
-      env[key] = undefined;
-    }
-  }
+  // Spawn claude -p with JSON output. Prompt piped via stdin to avoid
+  // shell escaping issues. Env is passed through (child claude strips
+  // its own parent-detection vars internally).
+  const args = [
+    '-p',
+    '--output-format', 'json',
+    '--dangerously-skip-permissions',
+    '--max-turns', String(maxTurns),
+    '--allowed-tools', ...allowedTools,
+  ];
 
-  const q = query({
-    prompt,
-    options: {
-      cwd: workingDirectory,
-      allowedTools,
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
-      maxTurns,
-      env,
-    },
+  // Write prompt to a temp file and pipe it via shell to avoid stdin buffering issues
+  const promptFile = path.join(workingDirectory, '.prompt-tmp');
+  fs.writeFileSync(promptFile, prompt);
+
+  const proc = Bun.spawn(['sh', '-c', `cat "${promptFile}" | claude ${args.map(a => `"${a}"`).join(' ')}`], {
+    cwd: workingDirectory,
+    stdout: 'pipe',
+    stderr: 'pipe',
   });
 
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error(`Skill test timed out after ${timeout}ms`)), timeout);
-  });
+  // Race against timeout
+  let stdout = '';
+  let stderr = '';
+  let exitReason = 'unknown';
+  let timedOut = false;
+
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    proc.kill();
+  }, timeout);
 
   try {
-    const runner = (async () => {
-      for await (const msg of q) {
-        messages.push(msg);
+    const [outBuf, errBuf] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    stdout = outBuf;
+    stderr = errBuf;
 
-        // Extract tool calls from assistant messages
-        if (msg.type === 'assistant' && msg.message?.content) {
-          for (const block of msg.message.content) {
-            if (block.type === 'tool_use') {
-              toolCalls.push({
-                tool: block.name,
-                input: block.input,
-                output: '', // will be filled from tool_result
-              });
-            }
-            // Scan tool_result blocks for browse errors
-            if (block.type === 'tool_result' || (typeof block === 'object' && 'text' in block)) {
-              const text = typeof block === 'string' ? block : (block as any).text || '';
-              for (const pattern of BROWSE_ERROR_PATTERNS) {
-                if (pattern.test(text)) {
-                  browseErrors.push(text.slice(0, 200));
-                }
-              }
-            }
-          }
-        }
+    const exitCode = await proc.exited;
+    clearTimeout(timeoutId);
 
-        // Also scan user messages (which contain tool results)
-        if (msg.type === 'user' && msg.message?.content) {
-          const content = Array.isArray(msg.message.content) ? msg.message.content : [msg.message.content];
-          for (const block of content) {
-            const text = typeof block === 'string' ? block : (block as any)?.text || (block as any)?.content || '';
-            if (typeof text === 'string') {
-              for (const pattern of BROWSE_ERROR_PATTERNS) {
-                if (pattern.test(text)) {
-                  browseErrors.push(text.slice(0, 200));
-                }
-              }
-            }
-          }
-        }
-
-        // Capture result
-        if (msg.type === 'result') {
-          exitReason = msg.subtype || 'success';
-        }
-      }
-    })();
-
-    await Promise.race([runner, timeoutPromise]);
+    if (timedOut) {
+      exitReason = 'timeout';
+    } else if (exitCode === 0) {
+      exitReason = 'success';
+    } else {
+      exitReason = `exit_code_${exitCode}`;
+    }
   } catch (err: any) {
-    exitReason = err.message?.includes('timed out') ? 'timeout' : `error: ${err.message}`;
+    clearTimeout(timeoutId);
+    exitReason = timedOut ? 'timeout' : `error: ${err.message}`;
+  } finally {
+    try { fs.unlinkSync(promptFile); } catch { /* non-fatal */ }
   }
 
   const duration = Date.now() - startTime;
+
+  // Parse JSON output
+  let messages: any[] = [];
+  let toolCalls: SkillTestResult['toolCalls'] = [];
+  const browseErrors: string[] = [];
+  let result: any = null;
+
+  try {
+    // stdout may have stderr warnings prefixed (e.g., "[WARN] Fast mode...")
+    // Find the JSON object in the output
+    const jsonStart = stdout.indexOf('{');
+    if (jsonStart >= 0) {
+      result = JSON.parse(stdout.slice(jsonStart));
+    }
+  } catch { /* non-JSON output */ }
+
+  // Scan all output for browse errors
+  const allText = stdout + '\n' + stderr;
+  for (const pattern of BROWSE_ERROR_PATTERNS) {
+    const match = allText.match(pattern);
+    if (match) {
+      browseErrors.push(match[0].slice(0, 200));
+    }
+  }
+
+  // If JSON parsed, use the structured result
+  if (result) {
+    // Check result type for success
+    if (result.type === 'result' && result.subtype === 'success') {
+      exitReason = 'success';
+    } else if (result.type === 'result' && result.subtype) {
+      exitReason = result.subtype;
+    }
+  }
 
   // Save transcript on failure
   if (browseErrors.length > 0 || exitReason !== 'success') {
@@ -152,52 +151,36 @@ export async function runSkillTest(options: {
       const transcriptDir = path.join(workingDirectory, '.gstack', 'test-transcripts');
       fs.mkdirSync(transcriptDir, { recursive: true });
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const transcriptPath = path.join(transcriptDir, `e2e-${timestamp}.json`);
-      fs.writeFileSync(transcriptPath, JSON.stringify({
-        prompt,
-        exitReason,
-        browseErrors,
-        duration,
-        messages: messages.map(m => ({ type: m.type, subtype: m.subtype })),
-      }, null, 2));
-    } catch {
-      // Transcript save failures are non-fatal
-    }
+      fs.writeFileSync(
+        path.join(transcriptDir, `e2e-${timestamp}.json`),
+        JSON.stringify({
+          prompt: prompt.slice(0, 500),
+          exitReason,
+          browseErrors,
+          duration,
+          stderr: stderr.slice(0, 2000),
+          result: result ? { type: result.type, subtype: result.subtype, result: result.result?.slice?.(0, 500) } : null,
+        }, null, 2),
+      );
+    } catch { /* non-fatal */ }
   }
 
-  // Estimate cost from message sizes (chars / 4 ≈ tokens, approximate)
-  let inputChars = 0;
-  let outputChars = 0;
-  let turnsUsed = 0;
-
-  for (const msg of messages) {
-    const content = msg.message?.content;
-    if (!content) continue;
-    const text = typeof content === 'string'
-      ? content
-      : JSON.stringify(content);
-
-    if (msg.type === 'user') {
-      inputChars += text.length;
-    } else if (msg.type === 'assistant') {
-      outputChars += text.length;
-      turnsUsed++;
-    }
-  }
-
-  const estimatedTokens = Math.round((inputChars + outputChars) / 4);
-  // Approximate pricing: sonnet input ~$3/M, output ~$15/M tokens
-  const inputTokens = Math.round(inputChars / 4);
-  const outputTokens = Math.round(outputChars / 4);
-  const estimatedCost = (inputTokens * 3 + outputTokens * 15) / 1_000_000;
+  // Cost from JSON result (exact) or estimate from chars
+  const turnsUsed = result?.num_turns || 0;
+  const estimatedCost = result?.total_cost_usd || 0;
+  const inputChars = prompt.length;
+  const outputChars = (result?.result || stdout).length;
+  const estimatedTokens = (result?.usage?.input_tokens || 0)
+    + (result?.usage?.output_tokens || 0)
+    + (result?.usage?.cache_read_input_tokens || 0);
 
   const costEstimate: CostEstimate = {
     inputChars,
     outputChars,
     estimatedTokens,
-    estimatedCost: Math.round(estimatedCost * 100) / 100,
+    estimatedCost: Math.round((estimatedCost) * 100) / 100,
     turnsUsed,
   };
 
-  return { messages, toolCalls, browseErrors, exitReason, duration, costEstimate };
+  return { messages, toolCalls, browseErrors, exitReason, duration, output: result?.result || stdout, costEstimate };
 }

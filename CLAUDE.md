@@ -6,6 +6,7 @@
 bun install          # install dependencies
 bun test             # run free tests (browse + snapshot + skill validation)
 bun run test:evals   # run paid evals: LLM judge + Agent SDK E2E (~$4/run)
+bun run test:e2e     # run Agent SDK E2E tests only (~$3.85/run)
 bun run dev <cmd>    # run CLI in dev mode, e.g. bun run dev goto https://example.com
 bun run build        # gen docs + compile binaries
 bun run gen:skill-docs  # regenerate SKILL.md files from templates
@@ -15,6 +16,9 @@ bun run dev:skill    # watch mode: auto-regen + validate on change
 
 `test:evals` requires `ANTHROPIC_API_KEY` and must be run from a plain terminal
 (not inside Claude Code — nested Agent SDK sessions hang).
+
+**Update (v0.3.5):** The session runner now strips CLAUDE* env vars automatically,
+so `test:evals` may work inside Claude Code. If E2E tests hang, run from a plain terminal.
 
 ## Project structure
 

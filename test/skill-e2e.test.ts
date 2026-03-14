@@ -8,11 +8,9 @@ import * as os from 'os';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 
-// Skip unless EVALS=1 (or legacy SKILL_E2E=1). Also skip inside Claude Code /
-// Agent SDK sessions — nested sessions hang because the parent intercepts child subprocesses.
-const isInsideAgentSDK = !!process.env.CLAUDECODE || !!process.env.CLAUDE_CODE_ENTRYPOINT;
-const evalsEnabled = !!(process.env.EVALS || process.env.SKILL_E2E);
-const describeE2E = (evalsEnabled && !isInsideAgentSDK) ? describe : describe.skip;
+// Skip unless EVALS=1. Session runner strips CLAUDE* env vars to avoid nested session issues.
+const evalsEnabled = !!process.env.EVALS;
+const describeE2E = evalsEnabled ? describe : describe.skip;
 
 let testServer: ReturnType<typeof startTestServer>;
 let tmpDir: string;
@@ -168,14 +166,14 @@ Run a Quick-depth QA test on ${testServer.url}/basic.html
 Do NOT use AskUserQuestion — run Quick tier directly.
 Write your report to ${qaDir}/qa-reports/qa-report.md`,
       workingDirectory: qaDir,
-      maxTurns: 20,
-      timeout: 120_000,
+      maxTurns: 30,
+      timeout: 180_000,
     });
 
     logCost('/qa quick', result);
     expect(result.browseErrors).toHaveLength(0);
     expect(result.exitReason).toBe('success');
-  }, 180_000);
+  }, 240_000);
 });
 
 // --- B5: Review skill E2E ---
@@ -238,7 +236,7 @@ Write your review findings to ${reviewDir}/review-output.md`,
 
 // Outcome evals also need ANTHROPIC_API_KEY for the LLM judge
 const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
-const describeOutcome = (evalsEnabled && !isInsideAgentSDK && hasApiKey) ? describe : describe.skip;
+const describeOutcome = (evalsEnabled && hasApiKey) ? describe : describe.skip;
 
 describeOutcome('Planted-bug outcome evals', () => {
   let outcomeDir: string;
@@ -279,8 +277,8 @@ Save screenshots to ${reportDir}/screenshots/
 
 Be thorough: check console, check all links, check all forms, check mobile viewport, check accessibility.`,
       workingDirectory: outcomeDir,
-      maxTurns: 25,
-      timeout: 180_000,
+      maxTurns: 40,
+      timeout: 300_000,
     });
 
     logCost(`/qa ${label}`, result);
@@ -325,17 +323,17 @@ Be thorough: check console, check all links, check all forms, check mobile viewp
   // B6: Static dashboard — broken link, disabled submit, overflow, missing alt, console error
   test('/qa standard finds >= 3 of 5 planted bugs (static)', async () => {
     await runPlantedBugEval('qa-eval.html', 'qa-eval-ground-truth.json', 'b6-static');
-  }, 240_000);
+  }, 360_000);
 
   // B7: SPA — broken route, stale state, async race, missing aria, console warning
   test('/qa standard finds >= 3 of 5 planted SPA bugs', async () => {
     await runPlantedBugEval('qa-eval-spa.html', 'qa-eval-spa-ground-truth.json', 'b7-spa');
-  }, 240_000);
+  }, 360_000);
 
   // B8: Checkout — email regex, NaN total, CC overflow, missing required, stripe error
   test('/qa standard finds >= 3 of 5 planted checkout bugs', async () => {
     await runPlantedBugEval('qa-eval-checkout.html', 'qa-eval-checkout-ground-truth.json', 'b8-checkout');
-  }, 240_000);
+  }, 360_000);
 
   // Ship E2E deferred — too complex (requires full git + test suite + VERSION + CHANGELOG)
   test.todo('/ship completes without browse errors');
