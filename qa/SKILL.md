@@ -1,12 +1,11 @@
 ---
 name: qa
-version: 1.0.0
+version: 2.0.0
 description: |
   Systematically QA test a web application. Use when asked to "qa", "QA", "test this site",
-  "find bugs", "dogfood", or review quality. Four modes: diff-aware (automatic on feature
-  branches — analyzes git diff, identifies affected pages, tests them), full (systematic
-  exploration), quick (30-second smoke test), regression (compare against baseline). Produces
-  structured report with health score, screenshots, and repro steps.
+  "find bugs", "dogfood", or review quality. Generates a smart test plan with per-page risk
+  scoring, lets you choose depth (Quick/Standard/Exhaustive), then executes with evidence.
+  Reports persist to ~/.gstack/projects/ with history tracking and PR integration.
 allowed-tools:
   - Bash
   - Read
@@ -24,12 +23,12 @@ You are a QA engineer. Test web applications like a real user — click everythi
 | Parameter | Default | Override example |
 |-----------|---------|-----------------|
 | Target URL | (auto-detect or required) | `https://myapp.com`, `http://localhost:3000` |
-| Mode | full | `--quick`, `--regression .gstack/qa-reports/baseline.json` |
-| Output dir | `.gstack/qa-reports/` | `Output to /tmp/qa` |
+| Tier | (ask user) | `--quick`, `--exhaustive` |
+| Output dir | `~/.gstack/projects/{slug}/qa-reports/` | `Output to /tmp/qa` |
 | Scope | Full app (or diff-scoped) | `Focus on the billing page` |
 | Auth | None | `Sign in to user@example.com`, `Import cookies from cookies.json` |
 
-**If no URL is given and you're on a feature branch:** Automatically enter **diff-aware mode** (see Modes below). This is the most common case — the user just shipped code on a branch and wants to verify it works.
+**If no URL is given and you're on a feature branch:** Automatically enter **diff-aware mode** (see Phase 3).
 
 **Find the browse binary:**
 
@@ -47,67 +46,22 @@ echo "READY: $B"
 
 If you see `META:UPDATE_AVAILABLE`: tell the user an update is available, STOP and wait for approval, then run the command from the META payload and re-run the setup check.
 
-**Create output directories:**
+**Set up report directory (persistent, global):**
 
 ```bash
-REPORT_DIR=".gstack/qa-reports"
+REMOTE_SLUG=$(browse/bin/remote-slug 2>/dev/null || ~/.claude/skills/gstack/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
+REPORT_DIR="$HOME/.gstack/projects/$REMOTE_SLUG/qa-reports"
 mkdir -p "$REPORT_DIR/screenshots"
 ```
 
----
+**Gather git context for report metadata:**
 
-## Modes
-
-### Diff-aware (automatic when on a feature branch with no URL)
-
-This is the **primary mode** for developers verifying their work. When the user says `/qa` without a URL and the repo is on a feature branch, automatically:
-
-1. **Analyze the branch diff** to understand what changed:
-   ```bash
-   git diff main...HEAD --name-only
-   git log main..HEAD --oneline
-   ```
-
-2. **Identify affected pages/routes** from the changed files:
-   - Controller/route files → which URL paths they serve
-   - View/template/component files → which pages render them
-   - Model/service files → which pages use those models (check controllers that reference them)
-   - CSS/style files → which pages include those stylesheets
-   - API endpoints → test them directly with `$B js "await fetch('/api/...')"`
-   - Static pages (markdown, HTML) → navigate to them directly
-
-3. **Detect the running app** — check common local dev ports:
-   ```bash
-   $B goto http://localhost:3000 2>/dev/null && echo "Found app on :3000" || \
-   $B goto http://localhost:4000 2>/dev/null && echo "Found app on :4000" || \
-   $B goto http://localhost:8080 2>/dev/null && echo "Found app on :8080"
-   ```
-   If no local app is found, check for a staging/preview URL in the PR or environment. If nothing works, ask the user for the URL.
-
-4. **Test each affected page/route:**
-   - Navigate to the page
-   - Take a screenshot
-   - Check console for errors
-   - If the change was interactive (forms, buttons, flows), test the interaction end-to-end
-   - Use `snapshot -D` before and after actions to verify the change had the expected effect
-
-5. **Cross-reference with commit messages and PR description** to understand *intent* — what should the change do? Verify it actually does that.
-
-6. **Report findings** scoped to the branch changes:
-   - "Changes tested: N pages/routes affected by this branch"
-   - For each: does it work? Screenshot evidence.
-   - Any regressions on adjacent pages?
-
-**If the user provides a URL with diff-aware mode:** Use that URL as the base but still scope testing to the changed files.
-
-### Full (default when URL is provided)
-Systematic exploration. Visit every reachable page. Document 5-10 well-evidenced issues. Produce health score. Takes 5-15 minutes depending on app size.
-
-### Quick (`--quick`)
-30-second smoke test. Visit homepage + top 5 navigation targets. Check: page loads? Console errors? Broken links? Produce health score. No detailed issue documentation.
-
-### Regression (`--regression <baseline>`)
-Run full mode, then load `baseline.json` from a previous run. Diff: which issues are fixed? Which are new? What's the score delta? Append regression section to report.
+```bash
+BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+COMMIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+COMMIT_DATE=$(git log -1 --format=%Y-%m-%d 2>/dev/null || echo "unknown")
+PR_INFO=$(gh pr view --json number,url 2>/dev/null || echo "")
+```
 
 ---
 
@@ -116,9 +70,10 @@ Run full mode, then load `baseline.json` from a previous run. Diff: which issues
 ### Phase 1: Initialize
 
 1. Find browse binary (see Setup above)
-2. Create output directories
+2. Create report directory
 3. Copy report template from `qa/templates/qa-report-template.md` to output dir
 4. Start timer for duration tracking
+5. Fill in report metadata: branch, commit, PR, date
 
 ### Phase 2: Authenticate (if needed)
 
@@ -144,7 +99,7 @@ $B goto <target-url>
 
 **If CAPTCHA blocks you:** Tell the user: "Please complete the CAPTCHA in the browser, then tell me to continue."
 
-### Phase 3: Orient
+### Phase 3: Recon
 
 Get a map of the application:
 
@@ -163,36 +118,127 @@ $B console --errors               # any errors on landing?
 
 **For SPAs:** The `links` command may return few results because navigation is client-side. Use `snapshot -i` to find nav elements (buttons, menu items) instead.
 
-### Phase 4: Explore
-
-Visit pages systematically. At each page:
+**If on a feature branch (diff-aware mode):**
 
 ```bash
-$B goto <page-url>
-$B snapshot -i -a -o "$REPORT_DIR/screenshots/page-name.png"
-$B console --errors
+git diff main...HEAD --name-only
+git log main..HEAD --oneline
 ```
 
-Then follow the **per-page exploration checklist** (see `qa/references/issue-taxonomy.md`):
+Identify affected pages/routes from changed files using the Risk Heuristics below. Also:
 
-1. **Visual scan** — Look at the annotated screenshot for layout issues
-2. **Interactive elements** — Click buttons, links, controls. Do they work?
-3. **Forms** — Fill and submit. Test empty, invalid, edge cases
-4. **Navigation** — Check all paths in and out
-5. **States** — Empty state, loading, error, overflow
-6. **Console** — Any new JS errors after interactions?
-7. **Responsiveness** — Check mobile viewport if relevant:
+1. **Detect the running app** — check common local dev ports:
    ```bash
-   $B viewport 375x812
-   $B screenshot "$REPORT_DIR/screenshots/page-mobile.png"
-   $B viewport 1280x720
+   $B goto http://localhost:3000 2>/dev/null && echo "Found app on :3000" || \
+   $B goto http://localhost:4000 2>/dev/null && echo "Found app on :4000" || \
+   $B goto http://localhost:8080 2>/dev/null && echo "Found app on :8080"
    ```
+   If no local app is found, check for a staging/preview URL in the PR or environment. If nothing works, ask the user for the URL.
+
+2. **Cross-reference with commit messages and PR description** to understand *intent* — what should the change do? Verify it actually does that.
+
+### Phase 4: Generate Test Plan
+
+Based on recon results, generate a structured test plan with three tiers. Each tier is a superset of the one above it.
+
+**Risk Heuristics (use these to assign per-page depth):**
+
+| Changed File Pattern | Risk | Recommended Depth |
+|---------------------|------|-------------------|
+| Form/payment/auth/checkout files | HIGH | Exhaustive |
+| Controller/route with mutations (POST/PUT/DELETE) | HIGH | Exhaustive |
+| Config/env/deployment files | HIGH | Exhaustive on affected pages |
+| API endpoint handlers | MEDIUM | Standard + request validation |
+| View/template/component files | MEDIUM | Standard |
+| Model/service with business logic | MEDIUM | Standard |
+| CSS/style-only changes | LOW | Quick |
+| Docs/readme/comments only | LOW | Quick |
+| Test files only | SKIP | Not tested via QA |
+
+**Output the test plan in this format:**
+
+```markdown
+## Test Plan — {app-name}
+
+Branch: {branch} | Commit: {sha} | PR: #{number}
+Pages found: {N} | Affected by diff: {N}
+
+### Quick (~{estimated}s)
+1. / (homepage) — smoke check
+2. /dashboard — loads, no console errors
+...
+
+### Standard (~{estimated}min)
+1-N. Above, plus:
+N+1. /checkout — fill payment form, submit, verify flow
+...
+
+### Exhaustive (~{estimated}min)
+1-N. Above, plus:
+N+1. /checkout — empty, invalid, boundary inputs
+N+2. All pages at 3 viewports (375px, 768px, 1280px)
+...
+```
+
+**Time estimates:** Base on page count. Quick: ~3s per page. Standard: ~30-60s per page. Exhaustive: ~2-3min per page.
+
+**Ask the user which tier to run:**
+
+Use `AskUserQuestion` with these options:
+- `Quick (~{time}) — smoke test, {N} pages`
+- `Standard (~{time}) — full test, {N} pages, per-page checklist`
+- `Exhaustive (~{time}) — everything, 3 viewports, edge inputs, auth boundaries`
+
+The user may also type a custom response (the "Other" option). If they do, parse their edits (e.g., "skip /billing, add /admin, make checkout exhaustive"), rebuild the plan, show the updated plan, and confirm before executing.
+
+**CLI flag shortcuts:**
+- `--quick` → skip the question, pick Quick
+- `--exhaustive` → skip the question, pick Exhaustive
+- No flag → show test plan + ask
+
+**Save the test plan** to `$REPORT_DIR/test-plan-{YYYY-MM-DD}.md` before execution begins.
+
+### Phase 5: Execute
+
+Run the chosen tier. Visit pages in the order specified by the test plan.
+
+#### Quick Depth (per page)
+- Navigate to the page
+- Check: does it load? Any console errors?
+- Note broken links visible in navigation
+
+#### Standard Depth (per page)
+Everything in Quick, plus:
+- Take annotated screenshot: `$B snapshot -i -a -o "$REPORT_DIR/screenshots/page-name.png"`
+- Follow the per-page exploration checklist (see `qa/references/issue-taxonomy.md`):
+  1. **Visual scan** — Look at the annotated screenshot for layout issues
+  2. **Interactive elements** — Click buttons, links, controls. Do they work?
+  3. **Forms** — Fill and submit. Test empty and invalid cases
+  4. **Navigation** — Check all paths in and out
+  5. **States** — Empty state, loading, error, overflow
+  6. **Console** — Any new JS errors after interactions?
+  7. **Responsiveness** — Check mobile viewport on key pages:
+     ```bash
+     $B viewport 375x812
+     $B screenshot "$REPORT_DIR/screenshots/page-mobile.png"
+     $B viewport 1280x720
+     ```
 
 **Depth judgment:** Spend more time on core features (homepage, dashboard, checkout, search) and less on secondary pages (about, terms, privacy).
 
-**Quick mode:** Only visit homepage + top 5 navigation targets from the Orient phase. Skip the per-page checklist — just check: loads? Console errors? Broken links visible?
+#### Exhaustive Depth (per page)
+Everything in Standard, plus:
+- Every form tested with: empty submission, valid data, invalid data, boundary values, XSS-like inputs (`<script>alert(1)</script>`, `'; DROP TABLE users--`)
+- Every interactive element clicked and verified
+- 3 viewports: mobile (375px), tablet (768px), desktop (1280px)
+- Full accessibility snapshot check
+- Network request monitoring for 4xx/5xx errors and slow responses
+- State testing: empty states, error states, loading states, overflow content
+- Auth boundary test (attempt access while logged out)
+- Back/forward navigation after interactions
+- Console audit: every warning AND error, not just errors
 
-### Phase 5: Document
+### Phase 6: Document
 
 Document each issue **immediately when found** — don't batch them.
 
@@ -222,25 +268,74 @@ $B snapshot -i -a -o "$REPORT_DIR/screenshots/issue-002.png"
 
 **Write each issue to the report immediately** using the template format from `qa/templates/qa-report-template.md`.
 
-### Phase 6: Wrap Up
+### Phase 7: Wrap Up
 
 1. **Compute health score** using the rubric below
 2. **Write "Top 3 Things to Fix"** — the 3 highest-severity issues
 3. **Write console health summary** — aggregate all console errors seen across pages
 4. **Update severity counts** in the summary table
-5. **Fill in report metadata** — date, duration, pages visited, screenshot count, framework
+5. **Fill in report metadata** — date, duration, pages visited, screenshot count, framework, tier
 6. **Save baseline** — write `baseline.json` with:
    ```json
    {
      "date": "YYYY-MM-DD",
      "url": "<target>",
      "healthScore": N,
+     "tier": "Standard",
      "issues": [{ "id": "ISSUE-001", "title": "...", "severity": "...", "category": "..." }],
      "categoryScores": { "console": N, "links": N, ... }
    }
    ```
 
-**Regression mode:** After writing the report, load the baseline file. Compare:
+7. **Update the QA run index** — append a row to `$REPORT_DIR/index.md`:
+
+   If the file doesn't exist, create it with the header:
+   ```markdown
+   # QA Run History — {owner/repo}
+
+   | Date | Branch | PR | Tier | Score | Issues | Report |
+   |------|--------|----|------|-------|--------|--------|
+   ```
+
+   Then append:
+   ```markdown
+   | {DATE} | {BRANCH} | #{PR} | {TIER} | {SCORE}/100 | {COUNT} ({breakdown}) | [report](./{filename}) |
+   ```
+
+8. **Output completion summary:**
+
+   ```
+   QA complete: {emoji} {SCORE}/100 | {N} issues ({breakdown}) | {N} pages tested in {DURATION}
+   Report: file://{absolute-path-to-report}
+   ```
+
+   Health emoji: 90+ green, 70-89 yellow, <70 red.
+
+9. **Auto-open preference** — read `~/.gstack/config.json`:
+   - If `autoOpenQaReport` is not set, ask via AskUserQuestion: "Open QA report in your browser when done?" with options ["Yes, always open", "No, just show the link"]. Save the answer to `~/.gstack/config.json`.
+   - If `autoOpenQaReport` is `true`, run `open "{report-path}"` (macOS).
+   - If the user later says "stop opening QA reports" or "don't auto-open", update `config.json` to `false`.
+
+10. **PR comment** — if `gh pr view` succeeded earlier (there's an open PR):
+    Ask via AskUserQuestion: "Post QA summary to PR #{number}?" with options ["Yes, post comment", "No, skip"].
+
+    If yes, post via:
+    ```bash
+    gh pr comment {NUMBER} --body "$(cat <<'EOF'
+    ## QA Report — {emoji} {SCORE}/100
+
+    **Tier:** {TIER} | **Pages tested:** {N} | **Duration:** {DURATION}
+
+    ### Issues Found
+    - **{SEVERITY}** — {title}
+    ...
+
+    [Full report](file://{path})
+    EOF
+    )"
+    ```
+
+**Regression mode:** If `--regression <baseline>` was specified, load the baseline file after writing the report. Compare:
 - Health score delta
 - Issues fixed (in baseline but not current)
 - New issues (in current but not baseline)
@@ -333,14 +428,16 @@ Minimum 0 per category.
 ## Output Structure
 
 ```
-.gstack/qa-reports/
-├── qa-report-{domain}-{YYYY-MM-DD}.md    # Structured report
-├── screenshots/
-│   ├── initial.png                        # Landing page annotated screenshot
-│   ├── issue-001-step-1.png               # Per-issue evidence
-│   ├── issue-001-result.png
-│   └── ...
-└── baseline.json                          # For regression mode
+~/.gstack/projects/{remote-slug}/qa-reports/
+├── index.md                                  # QA run history with links
+├── test-plan-{YYYY-MM-DD}.md                 # Approved test plan
+├── qa-report-{domain}-{YYYY-MM-DD}.md        # Structured report
+├── baseline.json                             # For regression mode
+└── screenshots/
+    ├── initial.png                           # Landing page annotated screenshot
+    ├── issue-001-step-1.png                  # Per-issue evidence
+    ├── issue-001-result.png
+    └── ...
 ```
 
 Report filenames use the domain and date: `qa-report-myapp-com-2026-03-12.md`
