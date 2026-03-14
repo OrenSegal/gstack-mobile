@@ -86,6 +86,19 @@ describe('gstack-update-check', () => {
     expect(stdout).toBe('');
   });
 
+  // ─── Path D1b: Fresh UP_TO_DATE cache, but local version changed ──
+  test('re-checks when UP_TO_DATE cache version does not match local', () => {
+    writeFileSync(join(gstackDir, 'VERSION'), '0.4.0\n');
+    // Cache says UP_TO_DATE for 0.3.3, but local is now 0.4.0
+    writeFileSync(join(stateDir, 'last-update-check'), 'UP_TO_DATE 0.3.3');
+    // Remote says 0.5.0 — should detect upgrade
+    writeFileSync(join(gstackDir, 'REMOTE_VERSION'), '0.5.0\n');
+
+    const { exitCode, stdout } = run();
+    expect(exitCode).toBe(0);
+    expect(stdout).toBe('UPGRADE_AVAILABLE 0.4.0 0.5.0');
+  });
+
   // ─── Path D2: Fresh cache, UPGRADE_AVAILABLE ────────────────
   test('echoes cached UPGRADE_AVAILABLE when cache is fresh', () => {
     writeFileSync(join(gstackDir, 'VERSION'), '0.3.3\n');
