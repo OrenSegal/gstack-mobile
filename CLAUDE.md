@@ -5,10 +5,7 @@
 ```bash
 bun install          # install dependencies
 bun test             # run free tests (browse + snapshot + skill validation)
-bun run test:evals   # run ALL paid evals: LLM judge + Agent SDK E2E (~$4/run)
-bun run test:eval    # run LLM-as-judge evals only (~$0.15/run)
-bun run test:e2e     # run Agent SDK E2E tests only (~$3.85/run)
-bun run test:all     # free tests + all evals
+bun run test:evals   # run paid evals: LLM judge + Agent SDK E2E (~$4/run)
 bun run dev <cmd>    # run CLI in dev mode, e.g. bun run dev goto https://example.com
 bun run build        # gen docs + compile binaries
 bun run gen:skill-docs  # regenerate SKILL.md files from templates
@@ -16,8 +13,8 @@ bun run skill:check  # health dashboard for all skills
 bun run dev:skill    # watch mode: auto-regen + validate on change
 ```
 
-All eval commands require `ANTHROPIC_API_KEY` in your environment. E2E tests must
-be run from a plain terminal (not inside Claude Code — nested sessions hang).
+`test:evals` requires `ANTHROPIC_API_KEY` and must be run from a plain terminal
+(not inside Claude Code — nested Agent SDK sessions hang).
 
 ## Project structure
 
