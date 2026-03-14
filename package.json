@@ -20,7 +20,8 @@
     "start": "bun run browse/src/server.ts",
     "eval:list": "bun run scripts/eval-list.ts",
     "eval:compare": "bun run scripts/eval-compare.ts",
-    "eval:summary": "bun run scripts/eval-summary.ts"
+    "eval:summary": "bun run scripts/eval-summary.ts",
+    "eval:watch": "bun run scripts/eval-watch.ts"
   },
   "dependencies": {
     "playwright": "^1.58.2",

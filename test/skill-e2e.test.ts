@@ -18,8 +18,16 @@ const describeE2E = evalsEnabled ? describe : describe.skip;
 // Eval result collector — accumulates test results, writes to ~/.gstack-dev/evals/ on finalize
 const evalCollector = evalsEnabled ? new EvalCollector('e2e') : null;
 
+// Unique run ID for this E2E session — used for heartbeat + per-run log directory
+const runId = new Date().toISOString().replace(/[:.]/g, '').replace('T', '-').slice(0, 15);
+
 /** DRY helper to record an E2E test result into the eval collector. */
 function recordE2E(name: string, suite: string, result: SkillTestResult, extra?: Partial<EvalTestEntry>) {
+  // Derive last tool call from transcript for machine-readable diagnostics
+  const lastTool = result.toolCalls.length > 0
+    ? `${result.toolCalls[result.toolCalls.length - 1].tool}(${JSON.stringify(result.toolCalls[result.toolCalls.length - 1].input).slice(0, 60)})`
+    : undefined;
+
   evalCollector?.addTest({
     name, suite, tier: 'e2e',
     passed: result.exitReason === 'success' && result.browseErrors.length === 0,
@@ -29,6 +37,9 @@ function recordE2E(name: string, suite: string, result: SkillTestResult, extra?:
     output: result.output?.slice(0, 2000),
     turns_used: result.costEstimate.turnsUsed,
     browse_errors: result.browseErrors,
+    exit_reason: result.exitReason,
+    timeout_at_turn: result.exitReason === 'timeout' ? result.costEstimate.turnsUsed : undefined,
+    last_tool_call: lastTool,
     ...extra,
   });
 }
@@ -128,6 +139,8 @@ Report the results of each command.`,
       workingDirectory: tmpDir,
       maxTurns: 10,
       timeout: 60_000,
+      testName: 'browse-basic',
+      runId,
     });
 
     logCost('browse basic', result);
@@ -148,6 +161,8 @@ Report what each command returned.`,
       workingDirectory: tmpDir,
       maxTurns: 10,
       timeout: 60_000,
+      testName: 'browse-snapshot',
+      runId,
     });
 
     logCost('browse snapshot', result);
@@ -179,6 +194,8 @@ Report whether it worked.`,
       workingDirectory: tmpDir,
       maxTurns: 10,
       timeout: 60_000,
+      testName: 'skillmd-setup-discovery',
+      runId,
     });
 
     recordE2E('SKILL.md setup block discovery', 'Skill E2E tests', result);
@@ -204,6 +221,8 @@ Report the exact output. Do NOT try to fix or install anything — just report w
       workingDirectory: emptyDir,
       maxTurns: 5,
       timeout: 30_000,
+      testName: 'skillmd-no-local-binary',
+      runId,
     });
 
     // Setup block should either find the global binary (READY) or show NEEDS_SETUP.
@@ -237,6 +256,8 @@ Report the exact output — either "READY: <path>" or "NEEDS_SETUP".`,
       workingDirectory: nonGitDir,
       maxTurns: 5,
       timeout: 30_000,
+      testName: 'skillmd-outside-git',
+      runId,
     });
 
     // Should either find global binary (READY) or show NEEDS_SETUP — not crash
@@ -283,6 +304,8 @@ Write your report to ${qaDir}/qa-reports/qa-report.md`,
       workingDirectory: qaDir,
       maxTurns: 30,
       timeout: 180_000,
+      testName: 'qa-quick',
+      runId,
     });
 
     logCost('/qa quick', result);
@@ -345,6 +368,8 @@ Write your review findings to ${reviewDir}/review-output.md`,
       workingDirectory: reviewDir,
       maxTurns: 15,
       timeout: 90_000,
+      testName: 'review-sql-injection',
+      runId,
     });
 
     logCost('/review', result);
@@ -426,6 +451,8 @@ CRITICAL RULES:
       workingDirectory: testWorkDir,
       maxTurns: 40,
       timeout: 300_000,
+      testName: `qa-${label}`,
+      runId,
     });
 
     logCost(`/qa ${label}`, result);
@@ -579,6 +606,8 @@ Focus on reviewing the plan content: architecture, error handling, security, and
       workingDirectory: planDir,
       maxTurns: 15,
       timeout: 360_000,
+      testName: 'plan-ceo-review',
+      runId,
     });
 
     logCost('/plan-ceo-review', result);
@@ -670,6 +699,8 @@ Focus on architecture, code quality, tests, and performance sections.`,
       workingDirectory: planDir,
       maxTurns: 15,
       timeout: 360_000,
+      testName: 'plan-eng-review',
+      runId,
     });
 
     logCost('/plan-eng-review', result);
@@ -751,6 +782,8 @@ Analyze the git history and produce the narrative report as described in the SKI
       workingDirectory: retroDir,
       maxTurns: 30,
       timeout: 300_000,
+      testName: 'retro',
+      runId,
     });
 
     logCost('/retro', result);
