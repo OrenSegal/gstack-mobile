@@ -227,7 +227,7 @@ Refs are invalidated on navigation — run `snapshot` again after `goto`.
 | `diff <url1> <url2>` | Text diff between pages |
 | `pdf [path]` | Save as PDF |
 | `responsive [prefix]` | Screenshots at mobile (375x812), tablet (768x1024), desktop (1280x720). Saves as {prefix}-mobile.png etc. |
-| `screenshot [path]` | Save screenshot |
+| `screenshot [--viewport] [--clip x,y,w,h] [selector|@ref] [path]` | Save screenshot (supports element crop via CSS/@ref, --clip region, --viewport) |
 
 ### Snapshot
 | Command | Description |

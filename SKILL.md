@@ -128,6 +128,17 @@ $B viewport 375x812     # iPhone
 $B screenshot /tmp/mobile.png
 $B viewport 1440x900    # Desktop
 $B screenshot /tmp/desktop.png
+
+# Element screenshot (crop to specific element)
+$B screenshot "#hero-banner" /tmp/hero.png
+$B snapshot -i
+$B screenshot @e3 /tmp/button.png
+
+# Region crop
+$B screenshot --clip 0,0,800,600 /tmp/above-fold.png
+
+# Viewport only (no scroll)
+$B screenshot --viewport /tmp/viewport.png
 ```
 
 ### Test file upload
@@ -337,7 +348,7 @@ Refs are invalidated on navigation — run `snapshot` again after `goto`.
 | `diff <url1> <url2>` | Text diff between pages |
 | `pdf [path]` | Save as PDF |
 | `responsive [prefix]` | Screenshots at mobile (375x812), tablet (768x1024), desktop (1280x720). Saves as {prefix}-mobile.png etc. |
-| `screenshot [path]` | Save screenshot |
+| `screenshot [--viewport] [--clip x,y,w,h] [selector|@ref] [path]` | Save screenshot (supports element crop via CSS/@ref, --clip region, --viewport) |
 
 ### Snapshot
 | Command | Description |
