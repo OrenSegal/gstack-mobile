@@ -277,7 +277,10 @@ export async function runSkillTest(options: {
 
   // Use resultLine for structured result data
   if (resultLine) {
-    if (resultLine.subtype === 'success') {
+    if (resultLine.is_error) {
+      // claude -p can return subtype=success with is_error=true (e.g. API connection failure)
+      exitReason = 'error_api';
+    } else if (resultLine.subtype === 'success') {
       exitReason = 'success';
     } else if (resultLine.subtype) {
       exitReason = resultLine.subtype;
