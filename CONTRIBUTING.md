@@ -131,10 +131,12 @@ When E2E tests run, they produce machine-readable artifacts in `~/.gstack-dev/`:
 **Eval history tools:**
 
 ```bash
-bun run eval:list            # list all eval runs
-bun run eval:compare         # compare two runs (auto-picks most recent)
-bun run eval:summary         # aggregate stats across all runs
+bun run eval:list            # list all eval runs (turns, duration, cost per run)
+bun run eval:compare         # compare two runs — shows per-test deltas + Takeaway commentary
+bun run eval:summary         # aggregate stats + per-test efficiency averages across runs
 ```
+
+**Eval comparison commentary:** `eval:compare` generates natural-language Takeaway sections interpreting what changed between runs — flagging regressions, noting improvements, calling out efficiency gains (fewer turns, faster, cheaper), and producing an overall summary. This is driven by `generateCommentary()` in `eval-store.ts`.
 
 Artifacts are never cleaned up — they accumulate in `~/.gstack-dev/` for post-mortem debugging and trend analysis.
 

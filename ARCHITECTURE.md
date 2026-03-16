@@ -120,7 +120,7 @@ Refs (`@e1`, `@e2`, `@c1`) are how the agent addresses page elements without wri
 2. Server calls Playwright's page.accessibility.snapshot()
 3. Parser walks the ARIA tree, assigns sequential refs: @e1, @e2, @e3...
 4. For each ref, builds a Playwright Locator: getByRole(role, { name }).nth(index)
-5. Stores Map<string, Locator> on the BrowserManager instance
+5. Stores Map<string, RefEntry> on the BrowserManager instance (role + name + Locator)
 6. Returns the annotated tree as plain text
 
 Later:
@@ -141,6 +141,19 @@ Playwright Locators are external to the DOM. They use the accessibility tree (wh
 ### Ref lifecycle
 
 Refs are cleared on navigation (the `framenavigated` event on the main frame). This is correct — after navigation, all locators are stale. The agent must run `snapshot` again to get fresh refs. This is by design: stale refs should fail loudly, not click the wrong element.
+
+### Ref staleness detection
+
+SPAs can mutate the DOM without triggering `framenavigated` (e.g. React router transitions, tab switches, modal opens). This makes refs stale even though the page URL didn't change. To catch this, `resolveRef()` performs an async `count()` check before using any ref:
+
+```
+resolveRef(@e3) → entry = refMap.get("e3")
+                → count = await entry.locator.count()
+                → if count === 0: throw "Ref @e3 is stale — element no longer exists. Run 'snapshot' to get fresh refs."
+                → if count > 0: return { locator }
+```
+
+This fails fast (~5ms overhead) instead of letting Playwright's 30-second action timeout expire on a missing element. The `RefEntry` stores `role` and `name` metadata alongside the Locator so the error message can tell the agent what the element was.
 
 ### Cursor-interactive refs (@c)
 
