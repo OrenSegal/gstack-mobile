@@ -2,7 +2,7 @@
 name: review
 version: 1.0.0
 description: |
-  Pre-landing PR review. Analyzes diff against main for SQL safety, LLM trust
+  Pre-landing PR review. Analyzes diff against the base branch for SQL safety, LLM trust
   boundary violations, conditional side effects, and other structural issues.
 allowed-tools:
   - Bash
@@ -16,17 +16,19 @@ allowed-tools:
 
 {{PREAMBLE}}
 
+{{BASE_BRANCH_DETECT}}
+
 # Pre-Landing PR Review
 
-You are running the `/review` workflow. Analyze the current branch's diff against main for structural issues that tests don't catch.
+You are running the `/review` workflow. Analyze the current branch's diff against the base branch for structural issues that tests don't catch.
 
 ---
 
 ## Step 1: Check branch
 
 1. Run `git branch --show-current` to get the current branch.
-2. If on `main`, output: **"Nothing to review — you're on main or have no changes against main."** and stop.
-3. Run `git fetch origin main --quiet && git diff origin/main --stat` to check if there's a diff. If no diff, output the same message and stop.
+2. If on the base branch, output: **"Nothing to review — you're on the base branch or have no changes against it."** and stop.
+3. Run `git fetch origin <base> --quiet && git diff origin/<base> --stat` to check if there's a diff. If no diff, output the same message and stop.
 
 ---
 
@@ -50,13 +52,13 @@ Read `.claude/skills/review/greptile-triage.md` and follow the fetch, filter, cl
 
 ## Step 3: Get the diff
 
-Fetch the latest main to avoid false positives from a stale local main:
+Fetch the latest base branch to avoid false positives from stale local state:
 
 ```bash
-git fetch origin main --quiet
+git fetch origin <base> --quiet
 ```
 
-Run `git diff origin/main` to get the full diff. This includes both committed and uncommitted changes against the latest main.
+Run `git diff origin/<base>` to get the full diff. This includes both committed and uncommitted changes against the latest base branch.
 
 ---
 

@@ -203,6 +203,27 @@ describe('gen-skill-docs', () => {
   });
 });
 
+describe('BASE_BRANCH_DETECT resolver', () => {
+  // Find a generated SKILL.md that uses the placeholder (ship is guaranteed to)
+  const shipContent = fs.readFileSync(path.join(ROOT, 'ship', 'SKILL.md'), 'utf-8');
+
+  test('resolver output contains PR base detection command', () => {
+    expect(shipContent).toContain('gh pr view --json baseRefName');
+  });
+
+  test('resolver output contains repo default branch detection command', () => {
+    expect(shipContent).toContain('gh repo view --json defaultBranchRef');
+  });
+
+  test('resolver output contains fallback to main', () => {
+    expect(shipContent).toMatch(/fall\s*back\s+to\s+`main`/i);
+  });
+
+  test('resolver output uses "the base branch" phrasing', () => {
+    expect(shipContent).toContain('the base branch');
+  });
+});
+
 /**
  * Quality evals — catch description regressions.
  *

@@ -16,6 +16,8 @@ allowed-tools:
 
 {{PREAMBLE}}
 
+{{BASE_BRANCH_DETECT}}
+
 # Mega Plan Review Mode
 
 ## Philosophy
@@ -60,7 +62,7 @@ Before doing anything else, run a system audit. This is not the plan review — 
 Run the following commands:
 ```
 git log --oneline -30                          # Recent history
-git diff main --stat                           # What's already changed
+git diff <base> --stat                           # What's already changed
 git stash list                                 # Any stashed work
 grep -r "TODO\|FIXME\|HACK\|XXX" --include="*.rb" --include="*.js" -l
 find . -name "*.rb" -newer Gemfile.lock | head -20  # Recently touched files

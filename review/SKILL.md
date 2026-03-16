@@ -2,7 +2,7 @@
 name: review
 version: 1.0.0
 description: |
-  Pre-landing PR review. Analyzes diff against main for SQL safety, LLM trust
+  Pre-landing PR review. Analyzes diff against the base branch for SQL safety, LLM trust
   boundary violations, conditional side effects, and other structural issues.
 allowed-tools:
   - Bash
@@ -73,17 +73,36 @@ Then run: `mkdir -p ~/.gstack/contributor-logs && open ~/.gstack/contributor-log
 
 Slug: lowercase, hyphens, max 60 chars (e.g. `browse-snapshot-ref-gap`). Skip if file already exists. Max 3 reports per session. File inline and continue — don't stop the workflow. Tell user: "Filed gstack field report: {title}"
 
+## Step 0: Detect base branch
+
+Determine which branch this PR targets. Use the result as "the base branch" in all subsequent steps.
+
+1. Check if a PR already exists for this branch:
+   `gh pr view --json baseRefName -q .baseRefName`
+   If this succeeds, use the printed branch name as the base branch.
+
+2. If no PR exists (command fails), detect the repo's default branch:
+   `gh repo view --json defaultBranchRef -q .defaultBranchRef.name`
+
+3. If both commands fail, fall back to `main`.
+
+Print the detected base branch name. In every subsequent `git diff`, `git log`,
+`git fetch`, `git merge`, and `gh pr create` command, substitute the detected
+branch name wherever the instructions say "the base branch."
+
+---
+
 # Pre-Landing PR Review
 
-You are running the `/review` workflow. Analyze the current branch's diff against main for structural issues that tests don't catch.
+You are running the `/review` workflow. Analyze the current branch's diff against the base branch for structural issues that tests don't catch.
 
 ---
 
 ## Step 1: Check branch
 
 1. Run `git branch --show-current` to get the current branch.
-2. If on `main`, output: **"Nothing to review — you're on main or have no changes against main."** and stop.
-3. Run `git fetch origin main --quiet && git diff origin/main --stat` to check if there's a diff. If no diff, output the same message and stop.
+2. If on the base branch, output: **"Nothing to review — you're on the base branch or have no changes against it."** and stop.
+3. Run `git fetch origin <base> --quiet && git diff origin/<base> --stat` to check if there's a diff. If no diff, output the same message and stop.
 
 ---
 
@@ -107,13 +126,13 @@ Read `.claude/skills/review/greptile-triage.md` and follow the fetch, filter, cl
 
 ## Step 3: Get the diff
 
-Fetch the latest main to avoid false positives from a stale local main:
+Fetch the latest base branch to avoid false positives from stale local state:
 
 ```bash
-git fetch origin main --quiet
+git fetch origin <base> --quiet
 ```
 
-Run `git diff origin/main` to get the full diff. This includes both committed and uncommitted changes against the latest main.
+Run `git diff origin/<base>` to get the full diff. This includes both committed and uncommitted changes against the latest base branch.
 
 ---
 

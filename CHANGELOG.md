@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.2 — 2026-03-16
+
+- **Skills now respect your branch target.** `/ship`, `/review`, `/qa`, and `/plan-ceo-review` detect which branch your PR actually targets instead of assuming `main`. Stacked branches, Conductor workspaces targeting feature branches, and repos using `master` all just work now.
+- **`/retro` works on any default branch.** Repos using `master`, `develop`, or other default branch names are detected automatically — no more empty retros because the branch name was wrong.
+- **New `{{BASE_BRANCH_DETECT}}` placeholder** for skill authors — drop it into any template and get 3-step branch detection (PR base → repo default → fallback) for free.
+- **3 new E2E smoke tests** validate base branch detection works end-to-end across ship, review, and retro skills.
+
+### For contributors
+
+- Added "Writing SKILL templates" section to CLAUDE.md — rules for natural language over bash-isms, dynamic branch detection, self-contained code blocks.
+- Hardcoded-main regression test scans all `.tmpl` files for git commands with hardcoded `main`.
+- QA template cleaned up: removed `REPORT_DIR` shell variable, simplified port detection to prose.
+- gstack-upgrade template: explicit cross-step prose for variable references between bash blocks.
+
 ## 0.4.1 — 2026-03-16
 
 - **gstack now notices when it screws up.** Turn on contributor mode (`gstack-config set gstack_contributor true`) and gstack automatically writes up what went wrong — what you were doing, what broke, repro steps. Next time something annoys you, the bug report is already written. Fork gstack and fix it yourself.

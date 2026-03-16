@@ -94,13 +94,19 @@ fi
 echo "Install type: $INSTALL_TYPE at $INSTALL_DIR"
 ```
 
+The install type and directory path printed above will be used in all subsequent steps.
+
 ### Step 3: Save old version
+
+Use the install directory from Step 2's output below:
 
 ```bash
 OLD_VERSION=$(cat "$INSTALL_DIR/VERSION" 2>/dev/null || echo "unknown")
 ```
 
 ### Step 4: Upgrade
+
+Use the install type and directory detected in Step 2:
 
 **For git installs** (global-git, local-git):
 ```bash
@@ -125,7 +131,7 @@ rm -rf "$INSTALL_DIR.bak" "$TMP_DIR"
 
 ### Step 4.5: Sync local vendored copy
 
-After upgrading the primary install, check if there's also a local copy in the current project that needs updating:
+Use the install directory from Step 2. Check if there's also a local vendored copy that needs updating:
 
 ```bash
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null)

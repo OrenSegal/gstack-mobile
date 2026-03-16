@@ -388,6 +388,64 @@ describe('Greptile history format consistency', () => {
   });
 });
 
+// --- Hardcoded branch name detection in templates ---
+
+describe('No hardcoded branch names in SKILL templates', () => {
+  const tmplFiles = [
+    'ship/SKILL.md.tmpl',
+    'review/SKILL.md.tmpl',
+    'qa/SKILL.md.tmpl',
+    'plan-ceo-review/SKILL.md.tmpl',
+    'retro/SKILL.md.tmpl',
+  ];
+
+  // Patterns that indicate hardcoded 'main' in git commands
+  const gitMainPatterns = [
+    /\bgit\s+diff\s+(?:origin\/)?main\b/,
+    /\bgit\s+log\s+(?:origin\/)?main\b/,
+    /\bgit\s+fetch\s+origin\s+main\b/,
+    /\bgit\s+merge\s+origin\/main\b/,
+    /\borigin\/main\b/,
+  ];
+
+  // Lines that are allowed to mention 'main' (fallback logic, prose)
+  const allowlist = [
+    /fall\s*back\s+to\s+`main`/i,
+    /fall\s*back\s+to\s+`?main`?/i,
+    /typically\s+`?main`?/i,
+    /If\s+on\s+`main`/i,  // old pattern — should not exist
+  ];
+
+  for (const tmplFile of tmplFiles) {
+    test(`${tmplFile} has no hardcoded 'main' in git commands`, () => {
+      const filePath = path.join(ROOT, tmplFile);
+      if (!fs.existsSync(filePath)) return;
+      const lines = fs.readFileSync(filePath, 'utf-8').split('\n');
+      const violations: string[] = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const isAllowlisted = allowlist.some(p => p.test(line));
+        if (isAllowlisted) continue;
+
+        for (const pattern of gitMainPatterns) {
+          if (pattern.test(line)) {
+            violations.push(`Line ${i + 1}: ${line.trim()}`);
+            break;
+          }
+        }
+      }
+
+      if (violations.length > 0) {
+        throw new Error(
+          `${tmplFile} has hardcoded 'main' in git commands:\n` +
+          violations.map(v => `  ${v}`).join('\n')
+        );
+      }
+    });
+  }
+});
+
 // --- Part 7b: TODOS-format.md reference consistency ---
 
 describe('TODOS-format.md reference consistency', () => {
