@@ -491,7 +491,7 @@ describe('v0.4.1 preamble features', () => {
     test(`${skill} contains session awareness`, () => {
       const content = fs.readFileSync(path.join(ROOT, skill), 'utf-8');
       expect(content).toContain('_SESSIONS');
-      expect(content).toContain('ELI16');
+      expect(content).toContain('RECOMMENDATION');
     });
   }
 });
