@@ -20,7 +20,7 @@ Thirteen opinionated workflow skills for [Claude Code](https://docs.anthropic.co
 | `/plan-ceo-review` | Founder / CEO | Rethink the problem. Find the 10-star product hiding inside the request. |
 | `/plan-eng-review` | Eng manager / tech lead | Lock in architecture, data flow, diagrams, edge cases, and tests. |
 | `/plan-design-review` | Senior product designer | Designer's eye audit. 80-item checklist, letter grades, AI Slop detection, DESIGN.md inference. Report only — never touches code. |
-| `/design-consultation` | Design consultant | Build a complete design system from scratch. Researches competitors, proposes aesthetic + typography + color + spacing + motion, generates a preview page, and writes DESIGN.md. |
+| `/design-consultation` | Design consultant | Build a complete design system from scratch. Browses competitors to get in the ballpark, proposes safe choices AND creative risks, generates realistic product mockups, and writes DESIGN.md. |
 | `/review` | Paranoid staff engineer | Find the bugs that pass CI but blow up in production. Triages Greptile review comments. |
 | `/ship` | Release engineer | Sync main, run tests, resolve Greptile reviews, push, open PR. For a ready branch, not for deciding what to build. |
 | `/browse` | QA engineer | Give the agent eyes. It logs in, clicks through your app, takes screenshots, catches breakage. Full QA pass in 60 seconds. |
@@ -344,11 +344,15 @@ This is my **design partner mode**.
 
 `/plan-design-review` audits a site that already exists. `/design-consultation` is for when you have nothing yet — no design system, no font choices, no color palette. You are starting from zero and you want a senior designer to sit down with you and build the whole visual identity together.
 
-It is a conversation, not a form. The agent asks about your product, your users, and your space. If you want, it researches what top competitors in your category are doing — fonts, colors, layout patterns, aesthetic direction. Then it proposes a complete, coherent design system: aesthetic direction, typography (3+ fonts with specific roles), color palette with hex values, spacing scale, layout approach, and motion strategy. Every recommendation comes with a rationale. Every choice reinforces every other choice.
+It is a conversation, not a form. The agent asks about your product, your users, and your audience. It thinks about what your product needs to communicate — trust, speed, craft, warmth, whatever fits — and works backward from that to concrete choices. Then it proposes a complete, coherent design system: aesthetic direction, typography (3+ fonts with specific roles), color palette with hex values, spacing scale, layout approach, and motion strategy. Every recommendation comes with a rationale. Every choice reinforces every other choice.
 
-The key insight: individual design decisions are easy to make but hard to make coherently. Picking a font is simple. Picking a font that works with your color palette, your spacing density, your aesthetic direction, and your product's personality — that is the actual job. `/design-consultation` solves the coherence problem by proposing everything as one package, then letting you adjust any piece while it checks that the rest still holds together.
+But coherence is table stakes. Every dev tool dashboard looks the same — clean sans-serif, muted grays, a blue accent. They are all coherent. They are all forgettable. The difference between a product that looks "nice" and one that people actually recognize is the **deliberate creative risks**: the unexpected serif for headings, the bold accent nobody else in your category uses, the tighter spacing that makes your data feel authoritative instead of airy.
 
-After you agree on the system, it generates an interactive HTML preview page — your fonts rendered at real sizes, your color palette as actual UI components (buttons, cards, form inputs, alerts), light/dark mode toggle, all using your product name instead of lorem ipsum. You open the page in your browser and see the design system rendered before a single line of product code is written.
+That is what `/design-consultation` is really about. It does not just propose a safe system. It proposes safe choices AND risks — and tells you which is which. "Here are the choices that keep you literate in your category. And here is where I think you should break from convention, and why." You pick which risks to take. The agent checks that the whole system still coheres either way.
+
+If you want, the agent will browse your competitors' actual sites — take screenshots, analyze their fonts and colors and spacing — so you can see the landscape before you make choices. This is not about copying. It is about getting in the ballpark so you know what the conventions are, and then deciding which ones are worth breaking.
+
+After you agree on the system, it generates an interactive HTML preview page — not just swatches and font samples, but realistic product pages. If you are building a dashboard, you see a dashboard with a sidebar, data tables, and stat cards. If you are building a marketing site, you see a hero section with real copy and a CTA. Everything rendered in your design system, with your product name, in light and dark mode. You see what your product could feel like before a single line of production code is written.
 
 Then it writes `DESIGN.md` to your repo root — your project's design source of truth — and updates `CLAUDE.md` so every future Claude Code session respects the system. From that point on, `/qa-design-review` can audit against it, and any agent working on your frontend knows the rules.
 
@@ -356,44 +360,59 @@ Then it writes `DESIGN.md` to your repo root — your project's design source of
 You:   /design-consultation
 
 Claude: From the README, this looks like a developer analytics dashboard
-        for engineering teams. Sound right? And would you like me to
-        research what other dev tools are doing for design, or should
-        I work from what I know?
+        for engineering teams. Sound right? Tell me about the feeling
+        you want — and would you like me to browse some competitors
+        first so we can see the landscape?
 
-You:    Yes, it's a dashboard for eng managers. Research would be great.
+You:    Yes, it's for eng managers. Show me what's out there.
 
-Claude: I looked at Linear, Vercel, Railway, Planetscale, and Posthog.
-        They converge on clean sans-serifs and muted palettes, but
-        Linear stands out with its dark-first approach and tight spacing.
-        The gap: most of these feel interchangeable. Here's my proposal:
+Claude: [browses Linear, Vercel, Datadog, Posthog — takes screenshots]
 
-        AESTHETIC: Industrial/Utilitarian — data-first, no decoration tax
+        Here's the landscape. They all converge on clean sans-serifs
+        and muted blue-gray palettes. Linear stands out with dark-first
+        and tight spacing. The rest feel interchangeable.
+
+        Here's my proposal — and where I'd play it safe vs. take risks:
+
+        AESTHETIC: Industrial/Utilitarian — data-first, every pixel earns its place
         TYPOGRAPHY: Geist (body + UI), Instrument Serif (display), JetBrains Mono (data)
         COLOR: Restrained — slate neutrals, single teal accent (#0D9488)
         SPACING: 4px base, compact density
         LAYOUT: Grid-disciplined, 12-column
         MOTION: Minimal-functional — only transitions that aid comprehension
 
-        This coheres because the utilitarian aesthetic demands a tight
-        spacing grid and restrained color. The serif display font creates
-        hierarchy contrast without adding visual noise. The monospace for
-        data tables feels native to the engineering audience.
+        SAFE CHOICES (match category expectations):
+          Geist for body — your users already know this font from Vercel
+          Slate neutrals — warm grays feel right for data-heavy UIs
+          Grid-disciplined layout — dashboards need predictable alignment
 
-        Want to adjust anything, or should I generate the preview page?
+        RISKS (where you'd stand out):
+          Instrument Serif for display headings — nobody in dev tools
+            uses a serif. It creates instant hierarchy contrast and
+            signals "we care about craft" in a space full of sans-serifs.
+          Single teal accent instead of blue — every competitor uses blue.
+            Teal is close enough to feel trustworthy, different enough
+            to be recognizable.
+          4px compact density — tighter than Linear, says "we respect
+            your screen real estate."
 
-You:    Generate it.
+        The safe choices keep you literate. The risks are where your
+        product gets its own face. Which risks appeal to you?
+
+You:    Love the serif risk. Let's see it.
 
 Claude: Preview opened in your browser.
         [/tmp/design-consultation-preview-1710000000.html]
 
-        The page shows Instrument Serif at hero scale, Geist in body
-        paragraphs, JetBrains Mono in a sample data table. Color swatches
-        with your teal accent against slate grays. Buttons, cards, and
-        alerts rendered in both light and dark mode.
+        The page shows a realistic dashboard: sidebar nav, header with
+        avatar, stat cards, data table — all in your design system.
+        Instrument Serif at hero scale, Geist in body text, JetBrains
+        Mono in the data table. Teal accent on buttons and active states.
+        Light and dark mode toggle in the corner.
 
         How does it feel? Want to adjust anything before I write DESIGN.md?
 
-You:    Looks great. Ship it.
+You:    Ship it.
 
 Claude: Wrote DESIGN.md (typography, color, spacing, layout, motion).
         Updated CLAUDE.md with design system guidelines.
