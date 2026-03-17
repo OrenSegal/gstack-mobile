@@ -384,7 +384,7 @@ Compare screenshots and observations across pages for:
 
 **Project-scoped:**
 ```bash
-SLUG=$(git remote get-url origin 2>/dev/null | sed 's|.*[:/]\([^/]*/[^/]*\)\.git$|\1|;s|.*[:/]\([^/]*/[^/]*\)$|\1|' | tr '/' '-')
+eval $(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
 mkdir -p ~/.gstack/projects/$SLUG
 ```
 Write to: `~/.gstack/projects/{slug}/{user}-{branch}-design-audit-{datetime}.md`
@@ -557,3 +557,49 @@ Project type: {web app / dashboard / marketing site / etc.}
 
 11. **Never fix anything.** Find and document only. Do not read source code, edit files, or suggest code fixes. Your job is to report what could be better and suggest design improvements. Use `/qa-design-review` for the fix loop.
 12. **The exception:** You MAY write a DESIGN.md file if the user accepts the offer. This is the only file you create.
+
+## Review Log
+
+After compiling the report, persist the review result:
+
+```bash
+eval $(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
+mkdir -p ~/.gstack/projects/$SLUG
+echo '{"skill":"plan-design-review","timestamp":"TIMESTAMP","status":"STATUS","design_score":"GRADE","ai_slop_score":"GRADE","mode":"MODE"}' >> ~/.gstack/projects/$SLUG/$BRANCH-reviews.jsonl
+```
+
+Substitute values from the report:
+- **TIMESTAMP**: current ISO 8601 datetime
+- **STATUS**: "clean" if Design Score is A or B; "issues_open" if C, D, or F
+- **GRADE**: the letter grade from the report (Design Score and AI Slop Score respectively)
+- **MODE**: Full / Quick / Deep / Diff-aware / Regression
+
+## Review Readiness Dashboard
+
+After completing the review, read the review log to display the dashboard.
+
+```bash
+eval $(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
+cat ~/.gstack/projects/$SLUG/$BRANCH-reviews.jsonl 2>/dev/null || echo "NO_REVIEWS"
+```
+
+Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, plan-design-review). Ignore entries with timestamps older than 7 days. Display:
+
+```
++====================================================================+
+|                    REVIEW READINESS DASHBOARD                       |
++====================================================================+
+| Review          | Runs | Last Run            | Status               |
+|-----------------|------|---------------------|----------------------|
+| CEO Review      |  1   | 2026-03-16 14:30    | CLEAR                |
+| Eng Review      |  1   | 2026-03-16 15:00    | CLEAR                |
+| Design Review   |  0   | —                   | NOT YET RUN          |
++--------------------------------------------------------------------+
+| VERDICT: 2/3 CLEAR — Design Review not yet run                      |
++====================================================================+
+```
+
+**Verdict logic:**
+- **CLEARED TO SHIP (3/3)**: All three have >= 1 entry within 7 days AND most recent status is "clean"
+- **N/3 CLEAR**: Show count and list which are missing, have open issues, or are stale (>7 days)
+- Informational only — does NOT block.

@@ -408,6 +408,32 @@ Shipped as `/design-consultation` on garrytan/design branch. Renamed from `/setu
 **Priority:** P2
 **Depends on:** None
 
+## Ship Confidence Dashboard
+
+### Smart review relevance detection
+
+**What:** Auto-detect which of the 4 reviews are relevant based on branch changes (skip Design Review if no CSS/view changes, skip Code Review if plan-only).
+
+**Why:** Currently dashboard always shows 4 rows. On docs-only changes, "Design Review: NOT YET RUN" is noise.
+
+**Context:** /plan-design-review and /qa already do file-type detection in diff-aware mode. Could reuse that heuristic. Would require a `gstack-diff-scope` helper or enriching `gstack-slug` to also output change categories.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** Ship Confidence Dashboard (shipped)
+
+### /merge skill — review-gated PR merge
+
+**What:** Create a `/merge` skill that merges an approved PR, but first checks the Review Readiness Dashboard and runs `/review` (Fix-First) if code review hasn't been done. Separates "ship" (create PR) from "merge" (land it).
+
+**Why:** Currently `/review` runs inside `/ship` Step 3.5 but isn't tracked as a gate. A `/merge` skill ensures code review always happens before landing, and enables workflows where someone else reviews the PR first.
+
+**Context:** `/ship` creates the PR. `/merge` would: check dashboard → run `/review` if needed → `gh pr merge`. This is where code review tracking belongs — at merge time, not at plan time.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** Ship Confidence Dashboard (shipped)
+
 ## Completed
 
 ### Phase 1: Foundations (v0.2.0)

@@ -322,3 +322,30 @@ describe('description quality evals', () => {
     expect(tipsSection).not.toContain('->');
   });
 });
+
+describe('REVIEW_DASHBOARD resolver', () => {
+  const REVIEW_SKILLS = ['plan-ceo-review', 'plan-eng-review', 'plan-design-review'];
+
+  for (const skill of REVIEW_SKILLS) {
+    test(`review dashboard appears in ${skill} generated file`, () => {
+      const content = fs.readFileSync(path.join(ROOT, skill, 'SKILL.md'), 'utf-8');
+      expect(content).toContain('reviews.jsonl');
+      expect(content).toContain('REVIEW READINESS DASHBOARD');
+    });
+  }
+
+  test('review dashboard appears in ship generated file', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'ship', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('reviews.jsonl');
+    expect(content).toContain('REVIEW READINESS DASHBOARD');
+  });
+
+  test('resolver output contains key dashboard elements', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('VERDICT');
+    expect(content).toContain('CLEARED TO SHIP');
+    expect(content).toContain('NOT YET RUN');
+    expect(content).toContain('7 days');
+    expect(content).toContain('Design Review');
+  });
+});

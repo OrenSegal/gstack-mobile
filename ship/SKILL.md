@@ -132,6 +132,43 @@ You are running the `/ship` workflow. This is a **non-interactive, fully automat
 
 3. Run `git diff <base>...HEAD --stat` and `git log <base>..HEAD --oneline` to understand what's being shipped.
 
+4. Check review readiness:
+
+## Review Readiness Dashboard
+
+After completing the review, read the review log to display the dashboard.
+
+```bash
+eval $(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
+cat ~/.gstack/projects/$SLUG/$BRANCH-reviews.jsonl 2>/dev/null || echo "NO_REVIEWS"
+```
+
+Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, plan-design-review). Ignore entries with timestamps older than 7 days. Display:
+
+```
++====================================================================+
+|                    REVIEW READINESS DASHBOARD                       |
++====================================================================+
+| Review          | Runs | Last Run            | Status               |
+|-----------------|------|---------------------|----------------------|
+| CEO Review      |  1   | 2026-03-16 14:30    | CLEAR                |
+| Eng Review      |  1   | 2026-03-16 15:00    | CLEAR                |
+| Design Review   |  0   | —                   | NOT YET RUN          |
++--------------------------------------------------------------------+
+| VERDICT: 2/3 CLEAR — Design Review not yet run                      |
++====================================================================+
+```
+
+**Verdict logic:**
+- **CLEARED TO SHIP (3/3)**: All three have >= 1 entry within 7 days AND most recent status is "clean"
+- **N/3 CLEAR**: Show count and list which are missing, have open issues, or are stale (>7 days)
+- Informational only — does NOT block.
+
+If the verdict is NOT "CLEARED TO SHIP (3/3)", use AskUserQuestion:
+- Show which reviews are missing or have open issues
+- RECOMMENDATION: Choose B (run missing reviews first) unless the change is trivial
+- Options: A) Ship anyway  B) Abort — run missing review(s) first  C) Reviews not relevant for this change
+
 ---
 
 ## Step 2: Merge the base branch (BEFORE tests)

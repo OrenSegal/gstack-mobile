@@ -145,3 +145,21 @@ Project type: {web app / dashboard / marketing site / etc.}
 
 11. **Never fix anything.** Find and document only. Do not read source code, edit files, or suggest code fixes. Your job is to report what could be better and suggest design improvements. Use `/qa-design-review` for the fix loop.
 12. **The exception:** You MAY write a DESIGN.md file if the user accepts the offer. This is the only file you create.
+
+## Review Log
+
+After compiling the report, persist the review result:
+
+```bash
+eval $(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
+mkdir -p ~/.gstack/projects/$SLUG
+echo '{"skill":"plan-design-review","timestamp":"TIMESTAMP","status":"STATUS","design_score":"GRADE","ai_slop_score":"GRADE","mode":"MODE"}' >> ~/.gstack/projects/$SLUG/$BRANCH-reviews.jsonl
+```
+
+Substitute values from the report:
+- **TIMESTAMP**: current ISO 8601 datetime
+- **STATUS**: "clean" if Design Score is A or B; "issues_open" if C, D, or F
+- **GRADE**: the letter grade from the report (Design Score and AI Slop Score respectively)
+- **MODE**: Full / Quick / Deep / Diff-aware / Regression
+
+{{REVIEW_DASHBOARD}}

@@ -534,6 +534,53 @@ List every ASCII diagram in files this plan touches. Still accurate?
 ### Unresolved Decisions
 If any AskUserQuestion goes unanswered, note it here. Never silently default.
 
+## Review Log
+
+After producing the Completion Summary above, persist the review result:
+
+```bash
+eval $(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
+mkdir -p ~/.gstack/projects/$SLUG
+echo '{"skill":"plan-ceo-review","timestamp":"TIMESTAMP","status":"STATUS","unresolved":N,"critical_gaps":N,"mode":"MODE"}' >> ~/.gstack/projects/$SLUG/$BRANCH-reviews.jsonl
+```
+
+Before running this command, substitute the placeholder values from the Completion Summary you just produced:
+- **TIMESTAMP**: current ISO 8601 datetime (e.g., 2026-03-16T14:30:00)
+- **STATUS**: "clean" if 0 unresolved decisions AND 0 critical gaps; otherwise "issues_open"
+- **unresolved**: number from "Unresolved decisions" in the summary
+- **critical_gaps**: number from "Failure modes: ___ CRITICAL GAPS" in the summary
+- **MODE**: the mode the user selected (SCOPE_EXPANSION / HOLD_SCOPE / SCOPE_REDUCTION)
+
+## Review Readiness Dashboard
+
+After completing the review, read the review log to display the dashboard.
+
+```bash
+eval $(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
+cat ~/.gstack/projects/$SLUG/$BRANCH-reviews.jsonl 2>/dev/null || echo "NO_REVIEWS"
+```
+
+Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, plan-design-review). Ignore entries with timestamps older than 7 days. Display:
+
+```
++====================================================================+
+|                    REVIEW READINESS DASHBOARD                       |
++====================================================================+
+| Review          | Runs | Last Run            | Status               |
+|-----------------|------|---------------------|----------------------|
+| CEO Review      |  1   | 2026-03-16 14:30    | CLEAR                |
+| Eng Review      |  1   | 2026-03-16 15:00    | CLEAR                |
+| Design Review   |  0   | —                   | NOT YET RUN          |
++--------------------------------------------------------------------+
+| VERDICT: 2/3 CLEAR — Design Review not yet run                      |
++====================================================================+
+```
+
+**Verdict logic:**
+- **CLEARED TO SHIP (3/3)**: All three have >= 1 entry within 7 days AND most recent status is "clean"
+- **N/3 CLEAR**: Show count and list which are missing, have open issues, or are stale (>7 days)
+- Informational only — does NOT block.
+
 ## Formatting Rules
 * NUMBER issues (1, 2, 3...) and LETTERS for options (A, B, C...).
 * Label with NUMBER + LETTER (e.g., "3A", "3B").

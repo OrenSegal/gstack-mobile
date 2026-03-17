@@ -114,7 +114,7 @@ ls src/ app/ pages/ components/ 2>/dev/null | head -30
 Look for brainstorm output:
 
 ```bash
-SLUG=$(git remote get-url origin 2>/dev/null | sed 's|.*[:/]\([^/]*/[^/]*\)\.git$|\1|;s|.*[:/]\([^/]*/[^/]*\)$|\1|' | tr '/' '-')
+eval $(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
 ls ~/.gstack/projects/$SLUG/*brainstorm* 2>/dev/null | head -5
 ls .context/*brainstorm* .context/attachments/*brainstorm* 2>/dev/null | head -5
 ```

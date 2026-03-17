@@ -665,3 +665,45 @@ describe('Planted-bug fixture validation', () => {
     expect(content).toContain('update_column');
   });
 });
+
+// --- gstack-slug helper ---
+
+describe('gstack-slug', () => {
+  const SLUG_BIN = path.join(ROOT, 'bin', 'gstack-slug');
+
+  test('binary exists and is executable', () => {
+    expect(fs.existsSync(SLUG_BIN)).toBe(true);
+    const stat = fs.statSync(SLUG_BIN);
+    expect(stat.mode & 0o111).toBeGreaterThan(0);
+  });
+
+  test('outputs SLUG and BRANCH lines in a git repo', () => {
+    const result = Bun.spawnSync([SLUG_BIN], { cwd: ROOT, stdout: 'pipe', stderr: 'pipe' });
+    expect(result.exitCode).toBe(0);
+    const output = result.stdout.toString();
+    expect(output).toContain('SLUG=');
+    expect(output).toContain('BRANCH=');
+  });
+
+  test('SLUG does not contain forward slashes', () => {
+    const result = Bun.spawnSync([SLUG_BIN], { cwd: ROOT, stdout: 'pipe', stderr: 'pipe' });
+    const slug = result.stdout.toString().match(/SLUG=(.*)/)?.[1] ?? '';
+    expect(slug).not.toContain('/');
+    expect(slug.length).toBeGreaterThan(0);
+  });
+
+  test('BRANCH does not contain forward slashes', () => {
+    const result = Bun.spawnSync([SLUG_BIN], { cwd: ROOT, stdout: 'pipe', stderr: 'pipe' });
+    const branch = result.stdout.toString().match(/BRANCH=(.*)/)?.[1] ?? '';
+    expect(branch).not.toContain('/');
+    expect(branch.length).toBeGreaterThan(0);
+  });
+
+  test('output is eval-compatible (KEY=VALUE format)', () => {
+    const result = Bun.spawnSync([SLUG_BIN], { cwd: ROOT, stdout: 'pipe', stderr: 'pipe' });
+    const lines = result.stdout.toString().trim().split('\n');
+    expect(lines.length).toBe(2);
+    expect(lines[0]).toMatch(/^SLUG=.+/);
+    expect(lines[1]).toMatch(/^BRANCH=.+/);
+  });
+});
