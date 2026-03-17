@@ -5,8 +5,11 @@
 ```bash
 bun install          # install dependencies
 bun test             # run free tests (browse + snapshot + skill validation)
-bun run test:evals   # run paid evals: LLM judge + E2E (~$4/run)
-bun run test:e2e     # run E2E tests only (~$3.85/run)
+bun run test:evals   # run paid evals: LLM judge + E2E (diff-based, ~$4/run max)
+bun run test:evals:all  # run ALL paid evals regardless of diff
+bun run test:e2e     # run E2E tests only (diff-based, ~$3.85/run max)
+bun run test:e2e:all # run ALL E2E tests regardless of diff
+bun run eval:select  # show which tests would run based on current diff
 bun run dev <cmd>    # run CLI in dev mode, e.g. bun run dev goto https://example.com
 bun run build        # gen docs + compile binaries
 bun run gen:skill-docs  # regenerate SKILL.md files from templates
@@ -20,6 +23,12 @@ bun run eval:summary # aggregate stats across all eval runs
 `test:evals` requires `ANTHROPIC_API_KEY`. E2E tests stream progress in real-time
 (tool-by-tool via `--output-format stream-json --verbose`). Results are persisted
 to `~/.gstack-dev/evals/` with auto-comparison against the previous run.
+
+**Diff-based test selection:** `test:evals` and `test:e2e` auto-select tests based
+on `git diff` against the base branch. Each test declares its file dependencies in
+`test/helpers/touchfiles.ts`. Changes to global touchfiles (session-runner, eval-store,
+llm-judge, gen-skill-docs) trigger all tests. Use `EVALS_ALL=1` or the `:all` script
+variants to force all tests. Run `eval:select` to preview which tests would run.
 
 ## Project structure
 
