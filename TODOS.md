@@ -386,6 +386,16 @@
 **Priority:** P2
 **Depends on:** None
 
+### Cross-platform URL open helper
+
+**What:** `gstack-open-url` helper script — detect platform, use `open` (macOS) or `xdg-open` (Linux).
+
+**Why:** The first-time Completeness Principle intro uses macOS `open` to launch the essay. If gstack ever supports Linux, this silently fails.
+
+**Effort:** S (human: ~30 min / CC: ~2 min)
+**Priority:** P4
+**Depends on:** Nothing
+
 ### CDP-based DOM mutation detection for ref staleness
 
 **What:** Use Chrome DevTools Protocol `DOM.documentUpdated` / MutationObserver events to proactively invalidate stale refs when the DOM changes, without requiring an explicit `snapshot` call.
@@ -457,6 +467,20 @@ Shipped as `/design-consultation` on garrytan/design branch. Renamed from `/setu
 **Effort:** M
 **Priority:** P2
 **Depends on:** Ship Confidence Dashboard (shipped)
+
+## Completeness
+
+### Completeness metrics dashboard
+
+**What:** Track how often Claude chooses the complete option vs shortcut across gstack sessions. Aggregate into a dashboard showing completeness trend over time.
+
+**Why:** Without measurement, we can't know if the Completeness Principle is working. Could surface patterns (e.g., certain skills still bias toward shortcuts).
+
+**Context:** Would require logging choices (e.g., append to a JSONL file when AskUserQuestion resolves), parsing them, and displaying trends. Similar pattern to eval persistence.
+
+**Effort:** M (human) / S (CC)
+**Priority:** P3
+**Depends on:** Boil the Lake shipped (v0.6.1)
 
 ## Completed
 

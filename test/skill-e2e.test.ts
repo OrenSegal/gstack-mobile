@@ -1886,7 +1886,7 @@ Write DESIGN.md and CLAUDE.md (or update it) in the working directory.`,
 
 This is a civic tech data platform called CivicPulse. Read the README.md.
 
-DO research competitors before proposing — search for civic tech and government data platform designs. Skip the font preview page. Skip any AskUserQuestion calls — this is non-interactive.
+DO research what's out there before proposing — search for civic tech and government data platform designs. Skip the font preview page. Skip any AskUserQuestion calls — this is non-interactive.
 
 Write DESIGN.md to the working directory.`,
       workingDirectory: designDir,

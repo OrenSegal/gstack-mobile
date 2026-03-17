@@ -121,6 +121,23 @@ CHANGELOG.md is **for users**, not contributors. Write it like product release n
 - No jargon: say "every question now tells you which project and branch you're in" not
   "AskUserQuestion format standardized across skill templates via preamble resolver."
 
+## AI effort compression
+
+When estimating or discussing effort, always show both human-team and CC+gstack time:
+
+| Task type | Human team | CC+gstack | Compression |
+|-----------|-----------|-----------|-------------|
+| Boilerplate / scaffolding | 2 days | 15 min | ~100x |
+| Test writing | 1 day | 15 min | ~50x |
+| Feature implementation | 1 week | 30 min | ~30x |
+| Bug fix + regression test | 4 hours | 15 min | ~20x |
+| Architecture / design | 2 days | 4 hours | ~5x |
+| Research / exploration | 1 day | 3 hours | ~3x |
+
+Completeness is cheap. Don't recommend shortcuts when the complete implementation
+is a "lake" (achievable) not an "ocean" (multi-quarter migration). See the
+Completeness Principle in the skill preamble for the full philosophy.
+
 ## Local plans
 
 Contributors can store long-range vision docs and design documents in `~/.gstack-dev/plans/`.

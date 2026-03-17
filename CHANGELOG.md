@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.6.1 — 2026-03-17 — Boil the Lake
+
+Every gstack skill now follows the **Completeness Principle**: always recommend the
+full implementation when AI makes the marginal cost near-zero. No more "Choose B
+because it's 90% of the value" when option A is 70 lines more code.
+
+Read the philosophy: https://garryslist.org/posts/boil-the-ocean
+
+- **Completeness scoring**: every AskUserQuestion option now shows a completeness
+  score (1-10), biasing toward the complete solution
+- **Dual time estimates**: effort estimates show both human-team and CC+gstack time
+  (e.g., "human: ~2 weeks / CC: ~1 hour") with a task-type compression reference table
+- **Anti-pattern examples**: concrete "don't do this" gallery in the preamble so the
+  principle isn't abstract
+- **First-time onboarding**: new users see a one-time introduction linking to the
+  essay, with option to open in browser
+- **Review completeness gaps**: `/review` now flags shortcut implementations where the
+  complete version costs <30 min CC time
+- **Lake Score**: CEO and Eng review completion summaries show how many recommendations
+  chose the complete option vs shortcuts
+- **CEO + Eng review dual-time**: temporal interrogation, effort estimates, and delight
+  opportunities all show both human and CC time scales
+
 ## 0.6.0.1 — 2026-03-17
 
 - **`/gstack-upgrade` now catches stale vendored copies automatically.** If your global gstack is up to date but the vendored copy in your project is behind, `/gstack-upgrade` detects the mismatch and syncs it. No more manually asking "did we vendor it?" — it just tells you and offers to update.
@@ -63,7 +86,7 @@
 ## 0.5.2 — 2026-03-17
 
 - **Your design consultant now takes creative risks.** `/design-consultation` doesn't just propose a safe, coherent system — it explicitly breaks down SAFE CHOICES (category baseline) vs. RISKS (where your product stands out). You pick which rules to break. Every risk comes with a rationale for why it works and what it costs.
-- **See the competition before you choose.** When you opt into research, the agent browses competitor sites with screenshots and accessibility tree analysis — not just web search results. You see what the landscape looks like before making design decisions.
+- **See the landscape before you choose.** When you opt into research, the agent browses real sites in your space with screenshots and accessibility tree analysis — not just web search results. You see what's out there before making design decisions.
 - **Preview pages that look like your product.** The preview page now renders realistic product mockups — dashboards with sidebar nav and data tables, marketing pages with hero sections, settings pages with forms — not just font swatches and color palettes.
 
 ## 0.5.1 — 2026-03-17
