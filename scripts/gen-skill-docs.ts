@@ -567,7 +567,7 @@ function generateDesignReviewLite(_ctx: TemplateContext): string {
 Check if the diff touches frontend files using \`gstack-diff-scope\`:
 
 \`\`\`bash
-eval $(~/.claude/skills/gstack/bin/gstack-diff-scope <base> 2>/dev/null)
+source <(~/.claude/skills/gstack/bin/gstack-diff-scope <base> 2>/dev/null)
 \`\`\`
 
 **If \`SCOPE_FRONTEND=false\`:** Skip design review silently. No output.
@@ -590,7 +590,7 @@ eval $(~/.claude/skills/gstack/bin/gstack-diff-scope <base> 2>/dev/null)
 6. **Log the result** for the Review Readiness Dashboard:
 
 \`\`\`bash
-eval $(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
+source <(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
 mkdir -p ~/.gstack/projects/$SLUG
 echo '{"skill":"design-review-lite","timestamp":"TIMESTAMP","status":"STATUS","findings":N,"auto_fixed":M,"commit":"COMMIT"}' >> ~/.gstack/projects/$SLUG/$BRANCH-reviews.jsonl
 \`\`\`
@@ -850,7 +850,7 @@ Compare screenshots and observations across pages for:
 
 **Project-scoped:**
 \`\`\`bash
-eval $(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
+source <(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
 mkdir -p ~/.gstack/projects/$SLUG
 \`\`\`
 Write to: \`~/.gstack/projects/{slug}/{user}-{branch}-design-audit-{datetime}.md\`
@@ -940,7 +940,7 @@ function generateReviewDashboard(_ctx: TemplateContext): string {
 After completing the review, read the review log and config to display the dashboard.
 
 \`\`\`bash
-eval $(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
+source <(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
 cat ~/.gstack/projects/$SLUG/$BRANCH-reviews.jsonl 2>/dev/null || echo "NO_REVIEWS"
 echo "---CONFIG---"
 ~/.claude/skills/gstack/bin/gstack-config get skip_eng_review 2>/dev/null || echo "false"
@@ -1208,7 +1208,7 @@ function findTemplates(): string[] {
     path.join(ROOT, 'plan-eng-review', 'SKILL.md.tmpl'),
     path.join(ROOT, 'retro', 'SKILL.md.tmpl'),
     path.join(ROOT, 'office-hours', 'SKILL.md.tmpl'),
-    path.join(ROOT, 'debug', 'SKILL.md.tmpl'),
+    path.join(ROOT, 'investigate', 'SKILL.md.tmpl'),
     path.join(ROOT, 'gstack-upgrade', 'SKILL.md.tmpl'),
     path.join(ROOT, 'plan-design-review', 'SKILL.md.tmpl'),
     path.join(ROOT, 'design-review', 'SKILL.md.tmpl'),

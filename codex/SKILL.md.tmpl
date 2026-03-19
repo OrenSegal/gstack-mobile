@@ -126,7 +126,7 @@ CROSS-MODEL ANALYSIS:
 
 7. Persist the review result:
 ```bash
-eval $(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
+source <(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
 BRANCH_SLUG=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-')
 mkdir -p ~/.gstack/projects/"$SLUG"
 echo '{"skill":"codex-review","timestamp":"TIMESTAMP","status":"STATUS","gate":"GATE","findings":N}' >> ~/.gstack/projects/"$SLUG"/"$BRANCH_SLUG"-reviews.jsonl

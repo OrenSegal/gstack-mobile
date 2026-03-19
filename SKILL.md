@@ -15,7 +15,7 @@ description: |
   - Reviewing a plan (architecture) → suggest /plan-eng-review
   - Reviewing a plan (design) → suggest /plan-design-review
   - Creating a design system → suggest /design-consultation
-  - Debugging errors → suggest /debug
+  - Debugging errors → suggest /investigate
   - Testing the app → suggest /qa
   - Code review before merge → suggest /review
   - Visual design audit → suggest /design-review

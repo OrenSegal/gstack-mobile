@@ -17,6 +17,7 @@
 
 import { chromium, type Browser, type BrowserContext, type BrowserContextOptions, type Page, type Locator, type Cookie } from 'playwright';
 import { addConsoleEntry, addNetworkEntry, addDialogEntry, networkBuffer, type DialogEntry } from './buffers';
+import { validateNavigationUrl } from './url-validation';
 
 export interface RefEntry {
   locator: Locator;
@@ -118,6 +119,11 @@ export class BrowserManager {
   // ─── Tab Management ────────────────────────────────────────
   async newTab(url?: string): Promise<number> {
     if (!this.context) throw new Error('Browser not launched');
+
+    // Validate URL before allocating page to avoid zombie tabs on rejection
+    if (url) {
+      validateNavigationUrl(url);
+    }
 
     const page = await this.context.newPage();
     const id = this.nextTabId++;

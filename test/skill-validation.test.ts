@@ -218,7 +218,7 @@ describe('Update check preamble', () => {
     'ship/SKILL.md', 'review/SKILL.md',
     'plan-ceo-review/SKILL.md', 'plan-eng-review/SKILL.md',
     'retro/SKILL.md',
-    'office-hours/SKILL.md', 'debug/SKILL.md',
+    'office-hours/SKILL.md', 'investigate/SKILL.md',
     'plan-design-review/SKILL.md',
     'design-review/SKILL.md',
     'design-consultation/SKILL.md',
@@ -530,7 +530,7 @@ describe('v0.4.1 preamble features', () => {
     'ship/SKILL.md', 'review/SKILL.md',
     'plan-ceo-review/SKILL.md', 'plan-eng-review/SKILL.md',
     'retro/SKILL.md',
-    'office-hours/SKILL.md', 'debug/SKILL.md',
+    'office-hours/SKILL.md', 'investigate/SKILL.md',
     'plan-design-review/SKILL.md',
     'design-review/SKILL.md',
     'design-consultation/SKILL.md',
@@ -646,8 +646,8 @@ describe('office-hours skill structure', () => {
   });
 });
 
-describe('debug skill structure', () => {
-  const content = fs.readFileSync(path.join(ROOT, 'debug', 'SKILL.md'), 'utf-8');
+describe('investigate skill structure', () => {
+  const content = fs.readFileSync(path.join(ROOT, 'investigate', 'SKILL.md'), 'utf-8');
   for (const section of ['Iron Law', 'Root Cause', 'Pattern Analysis', 'Hypothesis',
                           'DEBUG REPORT', '3-strike', 'BLOCKED']) {
     test(`contains ${section}`, () => expect(content).toContain(section));
@@ -1221,7 +1221,7 @@ describe('Skill trigger phrases', () => {
   // Excluded: root gstack (browser tool), gstack-upgrade (gstack-specific),
   // humanizer (text tool)
   const SKILLS_REQUIRING_TRIGGERS = [
-    'qa', 'qa-only', 'ship', 'review', 'debug', 'office-hours',
+    'qa', 'qa-only', 'ship', 'review', 'investigate', 'office-hours',
     'plan-ceo-review', 'plan-eng-review', 'plan-design-review',
     'design-review', 'design-consultation', 'retro', 'document-release',
     'codex', 'browse', 'setup-browser-cookies',
@@ -1241,7 +1241,7 @@ describe('Skill trigger phrases', () => {
 
   // Skills with proactive triggers should have "Proactively suggest" in description
   const SKILLS_REQUIRING_PROACTIVE = [
-    'qa', 'qa-only', 'ship', 'review', 'debug', 'office-hours',
+    'qa', 'qa-only', 'ship', 'review', 'investigate', 'office-hours',
     'plan-ceo-review', 'plan-eng-review', 'plan-design-review',
     'design-review', 'design-consultation', 'retro', 'document-release',
   ];

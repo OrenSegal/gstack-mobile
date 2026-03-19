@@ -50,7 +50,7 @@ function installSkills(tmpDir: string) {
     '', // root gstack SKILL.md
     'qa', 'qa-only', 'ship', 'review', 'plan-ceo-review', 'plan-eng-review',
     'plan-design-review', 'design-review', 'design-consultation', 'retro',
-    'document-release', 'debug', 'office-hours', 'browse', 'setup-browser-cookies',
+    'document-release', 'investigate', 'office-hours', 'browse', 'setup-browser-cookies',
     'gstack-upgrade', 'humanizer',
   ];
 
@@ -277,7 +277,7 @@ export default app;
       run('git', ['checkout', '-b', 'feature/waitlist-api']);
 
       const testName = 'journey-debug';
-      const expectedSkill = 'debug';
+      const expectedSkill = 'investigate';
       const result = await runSkillTest({
         prompt: "The GET /api/waitlist endpoint was working fine yesterday but now it's returning 500 errors. The tests are passing locally but the endpoint fails when I hit it with curl. Can you figure out what's going on?",
         workingDirectory: tmpDir,
