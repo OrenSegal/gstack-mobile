@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.4] - 2026-03-18
+
+### Changed
+
+- **`/qa` and `/design-review` now ask what to do with uncommitted changes** instead of refusing to start. When your working tree is dirty, you get an interactive prompt with three options: commit your changes, stash them, or abort. No more cryptic "ERROR: Working tree is dirty" followed by a wall of text.
+
 ## [0.7.3] - 2026-03-18
 
 ### Added
