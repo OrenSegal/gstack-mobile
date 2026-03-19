@@ -374,4 +374,51 @@ describe('REVIEW_DASHBOARD resolver', () => {
     expect(content).toContain('Design Review');
     expect(content).toContain('skip_eng_review');
   });
+
+  test('dashboard bash block includes git HEAD for staleness detection', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('git rev-parse --short HEAD');
+    expect(content).toContain('---HEAD---');
+  });
+
+  test('dashboard includes staleness detection prose', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('Staleness detection');
+    expect(content).toContain('commit');
+  });
+
+  for (const skill of REVIEW_SKILLS) {
+    test(`${skill} contains review chaining section`, () => {
+      const content = fs.readFileSync(path.join(ROOT, skill, 'SKILL.md'), 'utf-8');
+      expect(content).toContain('Review Chaining');
+    });
+
+    test(`${skill} Review Log includes commit field`, () => {
+      const content = fs.readFileSync(path.join(ROOT, skill, 'SKILL.md'), 'utf-8');
+      expect(content).toContain('"commit"');
+    });
+  }
+
+  test('plan-ceo-review chaining mentions eng and design reviews', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('/plan-eng-review');
+    expect(content).toContain('/plan-design-review');
+  });
+
+  test('plan-eng-review chaining mentions design and ceo reviews', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'plan-eng-review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('/plan-design-review');
+    expect(content).toContain('/plan-ceo-review');
+  });
+
+  test('plan-design-review chaining mentions eng and ceo reviews', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'plan-design-review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('/plan-eng-review');
+    expect(content).toContain('/plan-ceo-review');
+  });
+
+  test('ship does NOT contain review chaining', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'ship', 'SKILL.md'), 'utf-8');
+    expect(content).not.toContain('Review Chaining');
+  });
 });
