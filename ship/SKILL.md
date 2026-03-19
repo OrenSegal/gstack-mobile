@@ -27,14 +27,14 @@ touch ~/.gstack/sessions/"$PPID"
 _SESSIONS=$(find ~/.gstack/sessions -mmin -120 -type f 2>/dev/null | wc -l | tr -d ' ')
 find ~/.gstack/sessions -mmin +120 -type f -delete 2>/dev/null || true
 _CONTRIB=$(~/.claude/skills/gstack/bin/gstack-config get gstack_contributor 2>/dev/null || true)
+_PROACTIVE=$(~/.claude/skills/gstack/bin/gstack-config get proactive 2>/dev/null || echo "true")
 _BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 echo "BRANCH: $_BRANCH"
+echo "PROACTIVE: $_PROACTIVE"
 _LAKE_SEEN=$([ -f ~/.gstack/.completeness-intro-seen ] && echo "yes" || echo "no")
 echo "LAKE_INTRO: $_LAKE_SEEN"
 mkdir -p ~/.gstack/analytics
 echo '{"skill":"ship","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","repo":"'$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || echo "unknown")'"}'  >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
-_PROACTIVE=$(~/.claude/skills/gstack/bin/gstack-config get proactive 2>/dev/null || echo "true")
-echo "PROACTIVE: $_PROACTIVE"
 ```
 
 If `PROACTIVE` is `"false"`, do not proactively suggest gstack skills — only invoke
@@ -219,7 +219,7 @@ echo "---CONFIG---"
 ~/.claude/skills/gstack/bin/gstack-config get skip_eng_review 2>/dev/null || echo "false"
 ```
 
-Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, plan-design-review, design-review-lite). Ignore entries with timestamps older than 7 days. For Design Review, show whichever is more recent between `plan-design-review` (full visual audit) and `design-review-lite` (code-level check). Append "(FULL)" or "(LITE)" to the status to distinguish. Display:
+Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, plan-design-review, design-review-lite, codex-review). Ignore entries with timestamps older than 7 days. For Design Review, show whichever is more recent between `plan-design-review` (full visual audit) and `design-review-lite` (code-level check). Append "(FULL)" or "(LITE)" to the status to distinguish. Display:
 
 ```
 +====================================================================+
@@ -230,6 +230,7 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 | Eng Review      |  1   | 2026-03-16 15:00    | CLEAR     | YES      |
 | CEO Review      |  0   | —                   | —         | no       |
 | Design Review   |  0   | —                   | —         | no       |
+| Codex Review    |  0   | —                   | —         | no       |
 +--------------------------------------------------------------------+
 | VERDICT: CLEARED — Eng Review passed                                |
 +====================================================================+
@@ -239,11 +240,12 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 - **Eng Review (required by default):** The only review that gates shipping. Covers architecture, code quality, tests, performance. Can be disabled globally with \`gstack-config set skip_eng_review true\` (the "don't bother me" setting).
 - **CEO Review (optional):** Use your judgment. Recommend it for big product/business changes, new user-facing features, or scope decisions. Skip for bug fixes, refactors, infra, and cleanup.
 - **Design Review (optional):** Use your judgment. Recommend it for UI/UX changes. Skip for backend-only, infra, or prompt-only changes.
+- **Codex Review (optional):** Independent second opinion from OpenAI Codex CLI. Shows pass/fail gate. Recommend for critical code changes where a second AI perspective adds value. Skip when Codex CLI is not installed.
 
 **Verdict logic:**
 - **CLEARED**: Eng Review has >= 1 entry within 7 days with status "clean" (or \`skip_eng_review\` is \`true\`)
 - **NOT CLEARED**: Eng Review missing, stale (>7 days), or has open issues
-- CEO and Design reviews are shown for context but never block shipping
+- CEO, Design, and Codex reviews are shown for context but never block shipping
 - If \`skip_eng_review\` config is \`true\`, Eng Review shows "SKIPPED (global)" and verdict is CLEARED
 
 If the Eng Review is NOT "CLEAR":
@@ -773,6 +775,47 @@ For each classified comment:
 **SUPPRESSED:** Skip silently — these are known false positives from previous triage.
 
 **After all comments are resolved:** If any fixes were applied, the tests from Step 3 are now stale. **Re-run tests** (Step 3) before continuing to Step 4. If no fixes were applied, continue to Step 4.
+
+---
+
+## Step 3.8: Codex second opinion (optional)
+
+Check if the Codex CLI is available:
+
+```bash
+which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+```
+
+If Codex is available, use AskUserQuestion:
+
+```
+Pre-landing review complete. Want an independent Codex (OpenAI) review before shipping?
+
+A) Run Codex code review — independent diff review with pass/fail gate
+B) Run Codex adversarial challenge — try to break this code
+C) Skip — ship without Codex review
+```
+
+If the user chooses A or B:
+
+**For code review (A):** Run `codex review --base <base>` with a 5-minute timeout.
+Present the full output verbatim under a `CODEX SAYS:` header. Check for `[P1]` markers
+to determine pass/fail gate. Persist the result:
+
+```bash
+eval $(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
+BRANCH_SLUG=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-')
+mkdir -p ~/.gstack/projects/$SLUG
+echo '{"skill":"codex-review","timestamp":"TIMESTAMP","status":"STATUS","gate":"GATE"}' >> ~/.gstack/projects/$SLUG/$BRANCH_SLUG-reviews.jsonl
+```
+
+If GATE is FAIL, use AskUserQuestion: "Codex found critical issues. Ship anyway?"
+If the user says no, stop. If yes, continue to Step 4.
+
+**For adversarial (B):** Run codex exec with the adversarial prompt (see /codex skill).
+Present findings. This is informational — does not block shipping.
+
+If Codex is not available, skip silently. Continue to Step 4.
 
 ---
 

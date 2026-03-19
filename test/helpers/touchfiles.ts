@@ -73,6 +73,9 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   // Document-release
   'document-release': ['document-release/**'],
 
+  // Codex
+  'codex-review': ['codex/**'],
+
   // QA bootstrap
   'qa-bootstrap': ['qa/**', 'browse/src/**', 'ship/**'],
 

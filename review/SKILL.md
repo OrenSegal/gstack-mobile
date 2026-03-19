@@ -28,14 +28,14 @@ touch ~/.gstack/sessions/"$PPID"
 _SESSIONS=$(find ~/.gstack/sessions -mmin -120 -type f 2>/dev/null | wc -l | tr -d ' ')
 find ~/.gstack/sessions -mmin +120 -type f -delete 2>/dev/null || true
 _CONTRIB=$(~/.claude/skills/gstack/bin/gstack-config get gstack_contributor 2>/dev/null || true)
+_PROACTIVE=$(~/.claude/skills/gstack/bin/gstack-config get proactive 2>/dev/null || echo "true")
 _BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 echo "BRANCH: $_BRANCH"
+echo "PROACTIVE: $_PROACTIVE"
 _LAKE_SEEN=$([ -f ~/.gstack/.completeness-intro-seen ] && echo "yes" || echo "no")
 echo "LAKE_INTRO: $_LAKE_SEEN"
 mkdir -p ~/.gstack/analytics
 echo '{"skill":"review","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","repo":"'$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || echo "unknown")'"}'  >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
-_PROACTIVE=$(~/.claude/skills/gstack/bin/gstack-config get proactive 2>/dev/null || echo "true")
-echo "PROACTIVE: $_PROACTIVE"
 ```
 
 If `PROACTIVE` is `"false"`, do not proactively suggest gstack skills — only invoke
@@ -414,6 +414,58 @@ Cross-reference the diff against documentation files. For each `.md` file in the
 This is informational only — never critical. The fix action is `/document-release`.
 
 If no documentation files exist, skip this step silently.
+
+---
+
+## Step 5.7: Codex second opinion (optional)
+
+After completing the review, check if the Codex CLI is available:
+
+```bash
+which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+```
+
+If Codex is available, use AskUserQuestion:
+
+```
+Review complete. Want an independent second opinion from Codex (OpenAI)?
+
+A) Run Codex code review — independent diff review with pass/fail gate
+B) Run Codex adversarial challenge — try to find ways this code will fail in production
+C) Both — review first, then adversarial challenge
+D) Skip — no Codex review needed
+```
+
+If the user chooses A, B, or C:
+
+**For code review (A or C):** Run `codex review --base <base>` with a 5-minute timeout.
+Present the full output verbatim under a `CODEX SAYS (code review):` header.
+Check the output for `[P1]` markers — if found, note `GATE: FAIL`, otherwise `GATE: PASS`.
+After presenting, compare Codex's findings with your own review findings from Steps 4-5
+and output a CROSS-MODEL ANALYSIS showing what both found, what only Codex found,
+and what only Claude found.
+
+**For adversarial challenge (B or C):** Run:
+```bash
+codex exec "Review the changes on this branch against the base branch. Run git diff origin/<base> to see the diff. Your job is to find ways this code will fail in production. Think like an attacker and a chaos engineer. Find edge cases, race conditions, security holes, failure modes. Be adversarial." -s read-only
+```
+Present the full output verbatim under a `CODEX SAYS (adversarial challenge):` header.
+
+**Only if a code review ran (user chose A or C):** Persist the Codex review result to the review log:
+```bash
+eval $(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
+BRANCH_SLUG=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-')
+mkdir -p ~/.gstack/projects/"$SLUG"
+echo '{"skill":"codex-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","gate":"GATE"}' >> ~/.gstack/projects/"$SLUG"/"$BRANCH_SLUG"-reviews.jsonl
+```
+
+Substitute: STATUS ("clean" if PASS, "issues_found" if FAIL), GATE ("pass" or "fail").
+
+**Do NOT persist a codex-review entry when only the adversarial challenge (B) ran** —
+there is no gate verdict to record, and a false entry would make the Review Readiness
+Dashboard believe a code review happened when it didn't.
+
+If Codex is not available, skip this step silently.
 
 ---
 
