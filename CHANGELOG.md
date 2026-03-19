@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.8.1] - 2026-03-19
+
+### Fixed
+
+- **`/qa` no longer refuses to use the browser on backend-only changes.** Previously, if your branch only changed prompt templates, config files, or service logic, `/qa` would analyze the diff, conclude "no UI to test," and suggest running evals instead. Now it always opens the browser — falling back to a Quick mode smoke test (homepage + top 5 navigation targets) when no specific pages are identified from the diff.
+
 ## [0.8.0] - 2026-03-19 — Multi-AI Second Opinion
 
 **`/codex` — get an independent second opinion from a completely different AI.**
