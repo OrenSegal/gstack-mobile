@@ -22,6 +22,12 @@ description: |
   - Ready to deploy / create PR → suggest /ship
   - Post-ship doc updates → suggest /document-release
   - Weekly retrospective → suggest /retro
+  - Wanting a second opinion or adversarial code review → suggest /codex
+  - Working with production or live systems → suggest /careful
+  - Want to scope edits to one module/directory → suggest /freeze
+  - Maximum safety mode (destructive warnings + edit restrictions) → suggest /guard
+  - Removing edit restrictions → suggest /unfreeze
+  - Upgrading gstack to latest version → suggest /gstack-upgrade
 
   If the user pushes back on skill suggestions ("stop suggesting things",
   "I don't need suggestions", "too aggressive"):

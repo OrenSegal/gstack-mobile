@@ -19,6 +19,16 @@ Detailed guides for every gstack skill — philosophy, workflow, and examples.
 | [`/retro`](#retro) | **Eng Manager** | Team-aware weekly retro. Per-person breakdowns, shipping streaks, test health trends, growth opportunities. |
 | [`/browse`](#browse) | **QA Engineer** | Give the agent eyes. Real Chromium browser, real clicks, real screenshots. ~100ms per command. |
 | [`/setup-browser-cookies`](#setup-browser-cookies) | **Session Manager** | Import cookies from your real browser (Chrome, Arc, Brave, Edge) into the headless session. Test authenticated pages. |
+| | | |
+| **Multi-AI** | | |
+| [`/codex`](#codex) | **Second Opinion** | Independent review from OpenAI Codex CLI. Three modes: code review (pass/fail gate), adversarial challenge, and open consultation with session continuity. Cross-model analysis when both `/review` and `/codex` have run. |
+| | | |
+| **Safety & Utility** | | |
+| [`/careful`](#safety--guardrails) | **Safety Guardrails** | Warns before destructive commands (rm -rf, DROP TABLE, force-push, git reset --hard). Override any warning. Common build cleanups whitelisted. |
+| [`/freeze`](#safety--guardrails) | **Edit Lock** | Restrict all file edits to a single directory. Blocks Edit and Write outside the boundary. Accident prevention for debugging. |
+| [`/guard`](#safety--guardrails) | **Full Safety** | Combines /careful + /freeze in one command. Maximum safety for prod work. |
+| [`/unfreeze`](#safety--guardrails) | **Unlock** | Remove the /freeze boundary, allowing edits everywhere again. |
+| [`/gstack-upgrade`](#gstack-upgrade) | **Self-Updater** | Upgrade gstack to the latest version. Detects global vs vendored install, syncs both, shows what changed. |
 
 ---
 
@@ -616,6 +626,29 @@ Claude: [18 tool calls, ~60 seconds]
 
 18 tool calls, about a minute. Full QA pass. No browser opened.
 
+### Browser handoff
+
+When the headless browser gets stuck — CAPTCHA, MFA, complex auth — hand off to the user:
+
+```
+Claude: I'm stuck on a CAPTCHA at the login page. Opening a visible
+        Chrome so you can solve it.
+
+        > browse handoff "Stuck on CAPTCHA at login page"
+
+        Chrome opened at https://app.example.com/login with all your
+        cookies and tabs intact. Solve the CAPTCHA and tell me when
+        you're done.
+
+You:    done
+
+Claude: > browse resume
+
+        Got a fresh snapshot. Logged in successfully. Continuing QA.
+```
+
+The browser preserves all state (cookies, localStorage, tabs) across the handoff. After `resume`, the agent gets a fresh snapshot of wherever you left off. If the browse tool fails 3 times in a row, it automatically suggests using `handoff`.
+
 **Security note:** `/browse` runs a persistent Chromium session. Cookies, localStorage, and session state carry over between commands. Do not use it against sensitive production environments unless you intend to — it is a real browser with real state. The session auto-shuts down after 30 minutes of idle time.
 
 For the full command reference, see [BROWSER.md](../BROWSER.md).
@@ -650,6 +683,116 @@ You:   /setup-browser-cookies github.com
 
 Claude: Imported 12 cookies for github.com from Comet.
 ```
+
+---
+
+## `/codex`
+
+This is my **second opinion mode**.
+
+When `/review` catches bugs from Claude's perspective, `/codex` brings a completely different AI — OpenAI's Codex CLI — to review the same diff. Different training, different blind spots, different strengths. The overlap tells you what's definitely real. The unique findings from each are where you find the bugs neither would catch alone.
+
+### Three modes
+
+**Review** — run `codex review` against the current diff. Codex reads every changed file, classifies findings by severity (P1 critical, P2 high, P3 medium), and returns a PASS/FAIL verdict. Any P1 finding = FAIL. The review is fully independent — Codex doesn't see Claude's review.
+
+**Challenge** — adversarial mode. Codex actively tries to break your code. It looks for edge cases, race conditions, security holes, and assumptions that would fail under load. Uses maximum reasoning effort (`xhigh`). Think of it as a penetration test for your logic.
+
+**Consult** — open conversation with session continuity. Ask Codex anything about the codebase. Follow-up questions reuse the same session, so context carries over. Great for "am I thinking about this correctly?" moments.
+
+### Cross-model analysis
+
+When both `/review` (Claude) and `/codex` (OpenAI) have reviewed the same branch, you get a cross-model comparison: which findings overlap (high confidence), which are unique to Codex (different perspective), and which are unique to Claude. This is the "two doctors, same patient" approach to code review.
+
+```
+You:   /codex review
+
+Claude: Running independent Codex review...
+
+        CODEX REVIEW: PASS (3 findings)
+        [P2] Race condition in payment handler — concurrent charges
+             can double-debit without advisory lock
+        [P3] Missing null check on user.email before downcase
+        [P3] Token comparison not using constant-time compare
+
+        Cross-model analysis (vs /review):
+        OVERLAP: Race condition in payment handler (both caught it)
+        UNIQUE TO CODEX: Token comparison timing attack
+        UNIQUE TO CLAUDE: N+1 query in listing photos
+```
+
+---
+
+## Safety & Guardrails
+
+Four skills that add safety rails to any Claude Code session. They work via Claude Code's PreToolUse hooks — transparent, session-scoped, no configuration files.
+
+### `/careful`
+
+Say "be careful" or run `/careful` when you're working near production, running destructive commands, or just want a safety net. Every Bash command gets checked against known-dangerous patterns:
+
+- `rm -rf` / `rm -r` — recursive delete
+- `DROP TABLE` / `DROP DATABASE` / `TRUNCATE` — data loss
+- `git push --force` / `git push -f` — history rewrite
+- `git reset --hard` — discard commits
+- `git checkout .` / `git restore .` — discard uncommitted work
+- `kubectl delete` — production resource deletion
+- `docker rm -f` / `docker system prune` — container/image loss
+
+Common build artifact cleanups (`rm -rf node_modules`, `dist`, `.next`, `__pycache__`, `build`, `coverage`) are whitelisted — no false alarms on routine operations.
+
+You can override any warning. The guardrails are accident prevention, not access control.
+
+### `/freeze`
+
+Restrict all file edits to a single directory. When you're debugging a billing bug, you don't want Claude accidentally "fixing" unrelated code in `src/auth/`. `/freeze src/billing` blocks all Edit and Write operations outside that path.
+
+`/debug` activates this automatically — it detects the module being debugged and freezes edits to that directory.
+
+```
+You:   /freeze src/billing
+
+Claude: Edits restricted to src/billing/. Run /unfreeze to remove.
+
+        [Later, Claude tries to edit src/auth/middleware.ts]
+
+Claude: BLOCKED — Edit outside freeze boundary (src/billing/).
+        Skipping this change.
+```
+
+Note: this blocks Edit and Write tools only. Bash commands like `sed` can still modify files outside the boundary — it's accident prevention, not a security sandbox.
+
+### `/guard`
+
+Full safety mode — combines `/careful` + `/freeze` in one command. Destructive command warnings plus directory-scoped edits. Use when touching prod or debugging live systems.
+
+### `/unfreeze`
+
+Remove the `/freeze` boundary, allowing edits everywhere again. The hooks stay registered for the session — they just allow everything. Run `/freeze` again to set a new boundary.
+
+---
+
+## `/gstack-upgrade`
+
+Keep gstack current with one command. It detects your install type (global at `~/.claude/skills/gstack` vs vendored in your project at `.claude/skills/gstack`), runs the upgrade, syncs both copies if you have dual installs, and shows you what changed.
+
+```
+You:   /gstack-upgrade
+
+Claude: Current version: 0.7.4
+        Latest version: 0.8.2
+
+        What's new:
+        - Browse handoff for CAPTCHAs and auth walls
+        - /codex multi-AI second opinion
+        - /qa always uses browser now
+        - Safety skills: /careful, /freeze, /guard
+        - Proactive skill suggestions
+
+        Upgraded to 0.8.2. Both global and project installs synced.
+```
+
+Set `auto_upgrade: true` in `~/.gstack/config.yaml` to skip the prompt entirely — gstack upgrades silently at the start of each session when a new version is available.
 
 ---
 
