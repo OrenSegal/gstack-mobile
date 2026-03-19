@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2] - 2026-03-18
+
+### Fixed
+
+- `/retro` date ranges now align to midnight instead of the current time. Running `/retro` at 9pm no longer silently drops the morning of the start date — you get full calendar days.
+- `/retro` timestamps now use your local timezone instead of hardcoded Pacific time. Users outside the US-West coast get correct local hours in histograms, session detection, and streak tracking.
+
 ## [0.7.1] - 2026-03-19
 
 ### Added
