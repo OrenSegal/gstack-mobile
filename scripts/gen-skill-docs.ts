@@ -17,9 +17,16 @@ import * as path from 'path';
 const ROOT = path.resolve(import.meta.dir, '..');
 const DRY_RUN = process.argv.includes('--dry-run');
 
+// ─── Template Context ───────────────────────────────────────
+
+interface TemplateContext {
+  skillName: string;
+  tmplPath: string;
+}
+
 // ─── Placeholder Resolvers ──────────────────────────────────
 
-function generateCommandReference(): string {
+function generateCommandReference(_ctx: TemplateContext): string {
   // Group commands by category
   const groups = new Map<string, Array<{ command: string; description: string; usage?: string }>>();
   for (const [cmd, meta] of Object.entries(COMMAND_DESCRIPTIONS)) {
@@ -55,7 +62,7 @@ function generateCommandReference(): string {
   return sections.join('\n').trimEnd();
 }
 
-function generateSnapshotFlags(): string {
+function generateSnapshotFlags(_ctx: TemplateContext): string {
   const lines: string[] = [
     'The snapshot is your primary tool for understanding and interacting with pages.',
     '',
@@ -94,7 +101,7 @@ function generateSnapshotFlags(): string {
   return lines.join('\n');
 }
 
-function generatePreamble(): string {
+function generatePreamble(ctx: TemplateContext): string {
   return `## Preamble (run first)
 
 \`\`\`bash
@@ -109,6 +116,8 @@ _BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 echo "BRANCH: $_BRANCH"
 _LAKE_SEEN=$([ -f ~/.gstack/.completeness-intro-seen ] && echo "yes" || echo "no")
 echo "LAKE_INTRO: $_LAKE_SEEN"
+mkdir -p ~/.gstack/analytics
+echo '{"skill":"${ctx.skillName}","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","repo":"'$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || echo "unknown")'"}'  >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
 _PROACTIVE=$(~/.claude/skills/gstack/bin/gstack-config get proactive 2>/dev/null || echo "true")
 echo "PROACTIVE: $_PROACTIVE"
 \`\`\`
@@ -230,7 +239,7 @@ RECOMMENDATION: [what the user should do next]
 \`\`\``;
 }
 
-function generateBrowseSetup(): string {
+function generateBrowseSetup(_ctx: TemplateContext): string {
   return `## SETUP (run this check BEFORE any browse command)
 
 \`\`\`bash
@@ -251,7 +260,7 @@ If \`NEEDS_SETUP\`:
 3. If \`bun\` is not installed: \`curl -fsSL https://bun.sh/install | bash\``;
 }
 
-function generateBaseBranchDetect(): string {
+function generateBaseBranchDetect(_ctx: TemplateContext): string {
   return `## Step 0: Detect base branch
 
 Determine which branch this PR targets. Use the result as "the base branch" in all subsequent steps.
@@ -272,7 +281,7 @@ branch name wherever the instructions say "the base branch."
 ---`;
 }
 
-function generateQAMethodology(): string {
+function generateQAMethodology(_ctx: TemplateContext): string {
   return `## Modes
 
 ### Diff-aware (automatic when on a feature branch with no URL)
@@ -549,7 +558,7 @@ Minimum 0 per category.
 11. **Show screenshots to the user.** After every \`$B screenshot\`, \`$B snapshot -a -o\`, or \`$B responsive\` command, use the Read tool on the output file(s) so the user can see them inline. For \`responsive\` (3 files), Read all three. This is critical — without it, screenshots are invisible to the user.`;
 }
 
-function generateDesignReviewLite(): string {
+function generateDesignReviewLite(_ctx: TemplateContext): string {
   return `## Design Review (conditional, diff-scoped)
 
 Check if the diff touches frontend files using \`gstack-diff-scope\`:
@@ -588,7 +597,7 @@ Substitute: TIMESTAMP = ISO 8601 datetime, STATUS = "clean" if 0 findings or "is
 
 // NOTE: design-checklist.md is a subset of this methodology for code-level detection.
 // When adding items here, also update review/design-checklist.md, and vice versa.
-function generateDesignMethodology(): string {
+function generateDesignMethodology(_ctx: TemplateContext): string {
   return `## Modes
 
 ### Full (default)
@@ -922,7 +931,7 @@ Tie everything to user goals and product objectives. Always suggest specific imp
 11. **Show screenshots to the user.** After every \`$B screenshot\`, \`$B snapshot -a -o\`, or \`$B responsive\` command, use the Read tool on the output file(s) so the user can see them inline. For \`responsive\` (3 files), Read all three. This is critical — without it, screenshots are invisible to the user.`;
 }
 
-function generateReviewDashboard(): string {
+function generateReviewDashboard(_ctx: TemplateContext): string {
   return `## Review Readiness Dashboard
 
 After completing the review, read the review log and config to display the dashboard.
@@ -962,7 +971,7 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 - If \\\`skip_eng_review\\\` config is \\\`true\\\`, Eng Review shows "SKIPPED (global)" and verdict is CLEARED`;
 }
 
-function generateTestBootstrap(): string {
+function generateTestBootstrap(_ctx: TemplateContext): string {
   return `## Test Framework Bootstrap
 
 **Detect existing test framework and project runtime:**
@@ -1117,7 +1126,7 @@ Only commit if there are changes. Stage all bootstrap files (config, test direct
 ---`;
 }
 
-const RESOLVERS: Record<string, () => string> = {
+const RESOLVERS: Record<string, (ctx: TemplateContext) => string> = {
   COMMAND_REFERENCE: generateCommandReference,
   SNAPSHOT_FLAGS: generateSnapshotFlags,
   PREAMBLE: generatePreamble,
@@ -1139,11 +1148,16 @@ function processTemplate(tmplPath: string): { outputPath: string; content: strin
   const relTmplPath = path.relative(ROOT, tmplPath);
   const outputPath = tmplPath.replace(/\.tmpl$/, '');
 
+  // Extract skill name from frontmatter for TemplateContext
+  const nameMatch = tmplContent.match(/^name:\s*(.+)$/m);
+  const skillName = nameMatch ? nameMatch[1].trim() : path.basename(path.dirname(tmplPath));
+  const ctx: TemplateContext = { skillName, tmplPath };
+
   // Replace placeholders
   let content = tmplContent.replace(/\{\{(\w+)\}\}/g, (match, name) => {
     const resolver = RESOLVERS[name];
     if (!resolver) throw new Error(`Unknown placeholder {{${name}}} in ${relTmplPath}`);
-    return resolver();
+    return resolver(ctx);
   });
 
   // Check for any remaining unresolved placeholders
@@ -1187,6 +1201,10 @@ function findTemplates(): string[] {
     path.join(ROOT, 'design-review', 'SKILL.md.tmpl'),
     path.join(ROOT, 'design-consultation', 'SKILL.md.tmpl'),
     path.join(ROOT, 'document-release', 'SKILL.md.tmpl'),
+    path.join(ROOT, 'careful', 'SKILL.md.tmpl'),
+    path.join(ROOT, 'freeze', 'SKILL.md.tmpl'),
+    path.join(ROOT, 'guard', 'SKILL.md.tmpl'),
+    path.join(ROOT, 'unfreeze', 'SKILL.md.tmpl'),
   ];
   for (const p of candidates) {
     if (fs.existsSync(p)) templates.push(p);

@@ -31,6 +31,8 @@ _BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 echo "BRANCH: $_BRANCH"
 _LAKE_SEEN=$([ -f ~/.gstack/.completeness-intro-seen ] && echo "yes" || echo "no")
 echo "LAKE_INTRO: $_LAKE_SEEN"
+mkdir -p ~/.gstack/analytics
+echo '{"skill":"retro","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","repo":"'$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || echo "unknown")'"}'  >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
 _PROACTIVE=$(~/.claude/skills/gstack/bin/gstack-config get proactive 2>/dev/null || echo "true")
 echo "PROACTIVE: $_PROACTIVE"
 ```
@@ -294,6 +296,14 @@ Include in the metrics table:
 ```
 
 If TODOS.md doesn't exist, skip the Backlog Health row.
+
+**Skill Usage (if analytics exist):** Read `~/.gstack/analytics/skill-usage.jsonl` if it exists. Filter entries within the retro time window by `ts` field. Separate skill activations (no `event` field) from hook fires (`event: "hook_fire"`). Aggregate by skill name. Present as:
+
+```
+| Skill Usage | /ship(12) /qa(8) /review(5) · 3 safety hook fires |
+```
+
+If the JSONL file doesn't exist or has no entries in the window, skip the Skill Usage row.
 
 ### Step 3: Commit Time Distribution
 
