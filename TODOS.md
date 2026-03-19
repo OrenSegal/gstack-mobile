@@ -52,7 +52,9 @@
 
 **Why:** Enables "resume where I left off" for QA sessions and repeatable auth states.
 
-**Effort:** M
+**Context:** The `saveState()`/`restoreState()` helpers from the handoff feature (browser-manager.ts) already capture cookies + localStorage + sessionStorage + URLs. Adding file I/O on top is ~20 lines.
+
+**Effort:** S
 **Priority:** P3
 **Depends on:** Sessions
 

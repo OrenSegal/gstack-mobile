@@ -529,7 +529,9 @@ Refs are invalidated on navigation — run `snapshot` again after `goto`.
 ### Server
 | Command | Description |
 |---------|-------------|
+| `handoff [message]` | Open visible Chrome at current page for user takeover |
 | `restart` | Restart server |
+| `resume` | Re-snapshot after user takeover, return control to AI |
 | `status` | Health check |
 | `stop` | Shutdown server |
 
