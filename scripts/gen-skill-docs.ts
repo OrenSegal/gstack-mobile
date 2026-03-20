@@ -55,6 +55,7 @@ const HOST_PATHS: Record<Host, HostPaths> = {
 interface TemplateContext {
   skillName: string;
   tmplPath: string;
+  benefitsFrom?: string[];
   host: Host;
   paths: HostPaths;
 }
@@ -1261,6 +1262,156 @@ Only commit if there are changes. Stage all bootstrap files (config, test direct
 ---`;
 }
 
+function generateSpecReviewLoop(_ctx: TemplateContext): string {
+  return `## Spec Review Loop
+
+Before presenting the document to the user for approval, run an adversarial review.
+
+**Step 1: Dispatch reviewer subagent**
+
+Use the Agent tool to dispatch an independent reviewer. The reviewer has fresh context
+and cannot see the brainstorming conversation — only the document. This ensures genuine
+adversarial independence.
+
+Prompt the subagent with:
+- The file path of the document just written
+- "Read this document and review it on 5 dimensions. For each dimension, note PASS or
+  list specific issues with suggested fixes. At the end, output a quality score (1-10)
+  across all dimensions."
+
+**Dimensions:**
+1. **Completeness** — Are all requirements addressed? Missing edge cases?
+2. **Consistency** — Do parts of the document agree with each other? Contradictions?
+3. **Clarity** — Could an engineer implement this without asking questions? Ambiguous language?
+4. **Scope** — Does the document creep beyond the original problem? YAGNI violations?
+5. **Feasibility** — Can this actually be built with the stated approach? Hidden complexity?
+
+The subagent should return:
+- A quality score (1-10)
+- PASS if no issues, or a numbered list of issues with dimension, description, and fix
+
+**Step 2: Fix and re-dispatch**
+
+If the reviewer returns issues:
+1. Fix each issue in the document on disk (use Edit tool)
+2. Re-dispatch the reviewer subagent with the updated document
+3. Maximum 3 iterations total
+
+**Convergence guard:** If the reviewer returns the same issues on consecutive iterations
+(the fix didn't resolve them or the reviewer disagrees with the fix), stop the loop
+and persist those issues as "Reviewer Concerns" in the document rather than looping
+further.
+
+If the subagent fails, times out, or is unavailable — skip the review loop entirely.
+Tell the user: "Spec review unavailable — presenting unreviewed doc." The document is
+already written to disk; the review is a quality bonus, not a gate.
+
+**Step 3: Report and persist metrics**
+
+After the loop completes (PASS, max iterations, or convergence guard):
+
+1. Tell the user the result — summary by default:
+   "Your doc survived N rounds of adversarial review. M issues caught and fixed.
+   Quality score: X/10."
+   If they ask "what did the reviewer find?", show the full reviewer output.
+
+2. If issues remain after max iterations or convergence, add a "## Reviewer Concerns"
+   section to the document listing each unresolved issue. Downstream skills will see this.
+
+3. Append metrics:
+\`\`\`bash
+mkdir -p ~/.gstack/analytics
+echo '{"skill":"${_ctx.skillName}","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> ~/.gstack/analytics/spec-review.jsonl 2>/dev/null || true
+\`\`\`
+Replace ITERATIONS, FOUND, FIXED, REMAINING, SCORE with actual values from the review.`;
+}
+
+function generateBenefitsFrom(ctx: TemplateContext): string {
+  if (!ctx.benefitsFrom || ctx.benefitsFrom.length === 0) return '';
+
+  const skillList = ctx.benefitsFrom.map(s => `\`/${s}\``).join(' or ');
+  const first = ctx.benefitsFrom[0];
+
+  return `## Prerequisite Skill Offer
+
+When the design doc check above prints "No design doc found," offer the prerequisite
+skill before proceeding.
+
+Say to the user via AskUserQuestion:
+
+> "No design doc found for this branch. ${skillList} produces a structured problem
+> statement, premise challenge, and explored alternatives — it gives this review much
+> sharper input to work with. Takes about 10 minutes. The design doc is per-feature,
+> not per-product — it captures the thinking behind this specific change."
+
+Options:
+- A) Run /${first} first (in another window, then come back)
+- B) Skip — proceed with standard review
+
+If they skip: "No worries — standard review. If you ever want sharper input, try
+/${first} first next time." Then proceed normally. Do not re-offer later in the session.`;
+}
+
+function generateDesignSketch(_ctx: TemplateContext): string {
+  return `## Visual Sketch (UI ideas only)
+
+If the chosen approach involves user-facing UI (screens, pages, forms, dashboards,
+or interactive elements), generate a rough wireframe to help the user visualize it.
+If the idea is backend-only, infrastructure, or has no UI component — skip this
+section silently.
+
+**Step 1: Gather design context**
+
+1. Check if \`DESIGN.md\` exists in the repo root. If it does, read it for design
+   system constraints (colors, typography, spacing, component patterns). Use these
+   constraints in the wireframe.
+2. Apply core design principles:
+   - **Information hierarchy** — what does the user see first, second, third?
+   - **Interaction states** — loading, empty, error, success, partial
+   - **Edge case paranoia** — what if the name is 47 chars? Zero results? Network fails?
+   - **Subtraction default** — "as little design as possible" (Rams). Every element earns its pixels.
+   - **Design for trust** — every interface element builds or erodes user trust.
+
+**Step 2: Generate wireframe HTML**
+
+Generate a single-page HTML file with these constraints:
+- **Intentionally rough aesthetic** — use system fonts, thin gray borders, no color,
+  hand-drawn-style elements. This is a sketch, not a polished mockup.
+- Self-contained — no external dependencies, no CDN links, inline CSS only
+- Show the core interaction flow (1-3 screens/states max)
+- Include realistic placeholder content (not "Lorem ipsum" — use content that
+  matches the actual use case)
+- Add HTML comments explaining design decisions
+
+Write to a temp file:
+\`\`\`bash
+SKETCH_FILE="/tmp/gstack-sketch-$(date +%s).html"
+\`\`\`
+
+**Step 3: Render and capture**
+
+\`\`\`bash
+$B goto "file://$SKETCH_FILE"
+$B screenshot /tmp/gstack-sketch.png
+\`\`\`
+
+If \`$B\` is not available (browse binary not set up), skip the render step. Tell the
+user: "Visual sketch requires the browse binary. Run the setup script to enable it."
+
+**Step 4: Present and iterate**
+
+Show the screenshot to the user. Ask: "Does this feel right? Want to iterate on the layout?"
+
+If they want changes, regenerate the HTML with their feedback and re-render.
+If they approve or say "good enough," proceed.
+
+**Step 5: Include in design doc**
+
+Reference the wireframe screenshot in the design doc's "Recommended Approach" section.
+The screenshot file at \`/tmp/gstack-sketch.png\` can be referenced by downstream skills
+(\`/plan-design-review\`, \`/design-review\`) to see what was originally envisioned.`;
+}
+
 const RESOLVERS: Record<string, (ctx: TemplateContext) => string> = {
   COMMAND_REFERENCE: generateCommandReference,
   SNAPSHOT_FLAGS: generateSnapshotFlags,
@@ -1272,6 +1423,9 @@ const RESOLVERS: Record<string, (ctx: TemplateContext) => string> = {
   DESIGN_REVIEW_LITE: generateDesignReviewLite,
   REVIEW_DASHBOARD: generateReviewDashboard,
   TEST_BOOTSTRAP: generateTestBootstrap,
+  SPEC_REVIEW_LOOP: generateSpecReviewLoop,
+  DESIGN_SKETCH: generateDesignSketch,
+  BENEFITS_FROM: generateBenefitsFrom,
 };
 
 // ─── Codex Helpers ───────────────────────────────────────────
@@ -1394,7 +1548,14 @@ function processTemplate(tmplPath: string, host: Host = 'claude'): { outputPath:
   // Extract skill name from frontmatter for TemplateContext
   const nameMatch = tmplContent.match(/^name:\s*(.+)$/m);
   const skillName = nameMatch ? nameMatch[1].trim() : path.basename(path.dirname(tmplPath));
-  const ctx: TemplateContext = { skillName, tmplPath, host, paths: HOST_PATHS[host] };
+
+  // Extract benefits-from list from frontmatter (inline YAML: benefits-from: [a, b])
+  const benefitsMatch = tmplContent.match(/^benefits-from:\s*\[([^\]]*)\]/m);
+  const benefitsFrom = benefitsMatch
+    ? benefitsMatch[1].split(',').map(s => s.trim()).filter(Boolean)
+    : undefined;
+
+  const ctx: TemplateContext = { skillName, tmplPath, benefitsFrom, host, paths: HOST_PATHS[host] };
 
   // Replace placeholders
   let content = tmplContent.replace(/\{\{(\w+)\}\}/g, (match, name) => {

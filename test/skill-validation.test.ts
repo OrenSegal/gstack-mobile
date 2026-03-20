@@ -644,6 +644,59 @@ describe('office-hours skill structure', () => {
   test('contains builder operating principles', () => {
     expect(content).toContain('Delight is the currency');
   });
+
+  // Spec Review Loop (Phase 5.5)
+  test('contains spec review loop', () => {
+    expect(content).toContain('Spec Review Loop');
+  });
+
+  test('contains adversarial review dimensions', () => {
+    for (const dim of ['Completeness', 'Consistency', 'Clarity', 'Scope', 'Feasibility']) {
+      expect(content).toContain(dim);
+    }
+  });
+
+  test('contains subagent dispatch instruction', () => {
+    expect(content).toMatch(/Agent.*tool|subagent/i);
+  });
+
+  test('contains max 3 iterations', () => {
+    expect(content).toMatch(/3.*iteration|maximum.*3/i);
+  });
+
+  test('contains quality score', () => {
+    expect(content).toContain('quality score');
+  });
+
+  test('contains spec review metrics path', () => {
+    expect(content).toContain('spec-review.jsonl');
+  });
+
+  test('contains convergence guard', () => {
+    expect(content).toMatch(/convergence/i);
+  });
+
+  // Visual Sketch (Phase 4.5)
+  test('contains visual sketch section', () => {
+    expect(content).toContain('Visual Sketch');
+  });
+
+  test('contains wireframe generation', () => {
+    expect(content).toMatch(/wireframe|sketch/i);
+  });
+
+  test('contains DESIGN.md awareness', () => {
+    expect(content).toContain('DESIGN.md');
+  });
+
+  test('contains browse rendering', () => {
+    expect(content).toContain('$B goto');
+    expect(content).toContain('$B screenshot');
+  });
+
+  test('contains rough aesthetic instruction', () => {
+    expect(content).toMatch(/rough|hand-drawn/i);
+  });
 });
 
 describe('investigate skill structure', () => {
@@ -855,6 +908,22 @@ describe('CEO review mode validation', () => {
     expect(content).toContain('SELECTIVE');
     expect(content).toContain('HOLD SCOPE');
     expect(content).toContain('REDUCTION');
+  });
+
+  // Skill chaining (benefits-from)
+  test('contains prerequisite skill offer for office-hours', () => {
+    expect(content).toContain('Prerequisite Skill Offer');
+    expect(content).toContain('/office-hours');
+  });
+
+  test('contains mid-session detection', () => {
+    expect(content).toContain('Mid-session detection');
+    expect(content).toMatch(/still figuring out|seems lost/i);
+  });
+
+  // Spec review on CEO plans
+  test('contains spec review loop for CEO plan documents', () => {
+    expect(content).toContain('Spec Review Loop');
   });
 });
 

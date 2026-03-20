@@ -57,9 +57,13 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   'review-base-branch':       ['review/**'],
   'review-design-lite':       ['review/**', 'test/fixtures/review-eval-design-slop.*'],
 
+  // Office Hours
+  'office-hours-spec-review':  ['office-hours/**', 'scripts/gen-skill-docs.ts'],
+
   // Plan reviews
   'plan-ceo-review':           ['plan-ceo-review/**'],
   'plan-ceo-review-selective': ['plan-ceo-review/**'],
+  'plan-ceo-review-benefits':  ['plan-ceo-review/**', 'scripts/gen-skill-docs.ts'],
   'plan-eng-review':           ['plan-eng-review/**'],
   'plan-eng-review-artifact':  ['plan-eng-review/**'],
 
@@ -139,6 +143,10 @@ export const LLM_JUDGE_TOUCHFILES: Record<string, string[]> = {
   // Design skills
   'design-review/SKILL.md fix loop':      ['design-review/SKILL.md', 'design-review/SKILL.md.tmpl'],
   'design-consultation/SKILL.md research': ['design-consultation/SKILL.md', 'design-consultation/SKILL.md.tmpl'],
+
+  // Office Hours
+  'office-hours/SKILL.md spec review':    ['office-hours/SKILL.md', 'office-hours/SKILL.md.tmpl', 'scripts/gen-skill-docs.ts'],
+  'office-hours/SKILL.md design sketch':  ['office-hours/SKILL.md', 'office-hours/SKILL.md.tmpl', 'scripts/gen-skill-docs.ts'],
 
   // Other skills
   'retro/SKILL.md instructions':          ['retro/SKILL.md', 'retro/SKILL.md.tmpl'],

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.1.0] - 2026-03-20 — Adversarial Spec Review + Skill Chaining
+
+### Added
+
+- **Your design docs now get stress-tested before you see them.** When you run `/office-hours`, an independent AI reviewer checks your design doc for completeness, consistency, clarity, scope creep, and feasibility — up to 3 rounds. You get a quality score (1-10) and a summary of what was caught and fixed. The doc you approve has already survived adversarial review.
+- **Visual wireframes during brainstorming.** For UI ideas, `/office-hours` now generates a rough HTML wireframe using your project's design system (from DESIGN.md) and screenshots it. You see what you're designing while you're still thinking, not after you've coded it.
+- **Skills help each other now.** `/plan-ceo-review` and `/plan-eng-review` detect when you'd benefit from running `/office-hours` first and offer it — one-tap to switch, one-tap to decline. If you seem lost during a CEO review, it'll gently suggest brainstorming first.
+- **Spec review metrics.** Every adversarial review logs iterations, issues found/fixed, and quality score to `~/.gstack/analytics/spec-review.jsonl`. Over time, you can see if your design docs are getting better.
+
 ## [0.9.0.1] - 2026-03-19
 
 ### Changed

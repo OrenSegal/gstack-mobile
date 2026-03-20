@@ -8,6 +8,7 @@ description: |
   "review the architecture", "engineering review", or "lock in the plan".
   Proactively suggest when the user has a plan or design doc and is about to
   start coding — to catch architecture issues before implementation.
+benefits-from: [office-hours]
 allowed-tools:
   - Read
   - Write
@@ -276,6 +277,25 @@ DESIGN=$(ls -t ~/.gstack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head
 [ -n "$DESIGN" ] && echo "Design doc found: $DESIGN" || echo "No design doc found"
 ```
 If a design doc exists, read it. Use it as the source of truth for the problem statement, constraints, and chosen approach. If it has a `Supersedes:` field, note that this is a revised design — check the prior version for context on what changed and why.
+
+## Prerequisite Skill Offer
+
+When the design doc check above prints "No design doc found," offer the prerequisite
+skill before proceeding.
+
+Say to the user via AskUserQuestion:
+
+> "No design doc found for this branch. `/office-hours` produces a structured problem
+> statement, premise challenge, and explored alternatives — it gives this review much
+> sharper input to work with. Takes about 10 minutes. The design doc is per-feature,
+> not per-product — it captures the thinking behind this specific change."
+
+Options:
+- A) Run /office-hours first (in another window, then come back)
+- B) Skip — proceed with standard review
+
+If they skip: "No worries — standard review. If you ever want sharper input, try
+/office-hours first next time." Then proceed normally. Do not re-offer later in the session.
 
 ### Step 0: Scope Challenge
 Before reviewing anything, answer these questions:
