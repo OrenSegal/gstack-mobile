@@ -295,7 +295,7 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 - **Eng Review (required by default):** The only review that gates shipping. Covers architecture, code quality, tests, performance. Can be disabled globally with \`gstack-config set skip_eng_review true\` (the "don't bother me" setting).
 - **CEO Review (optional):** Use your judgment. Recommend it for big product/business changes, new user-facing features, or scope decisions. Skip for bug fixes, refactors, infra, and cleanup.
 - **Design Review (optional):** Use your judgment. Recommend it for UI/UX changes. Skip for backend-only, infra, or prompt-only changes.
-- **Codex Review (optional):** Independent second opinion from OpenAI Codex CLI. Shows pass/fail gate. Recommend for critical code changes where a second AI perspective adds value. Skip when Codex CLI is not installed.
+- **Codex Review (enabled by default when Codex CLI is installed):** Independent review + adversarial challenge from OpenAI Codex CLI. Shows pass/fail gate. Runs automatically when enabled — configure with \`gstack-config set codex_reviews enabled|disabled\`.
 
 **Verdict logic:**
 - **CLEARED**: Eng Review has >= 1 entry within 7 days with status "clean" (or \`skip_eng_review\` is \`true\`)
@@ -837,43 +837,7 @@ For each classified comment:
 
 ---
 
-## Step 3.8: Codex second opinion (optional)
 
-Check if the Codex CLI is available:
-
-```bash
-which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
-```
-
-If Codex is available, use AskUserQuestion:
-
-```
-Pre-landing review complete. Want an independent Codex (OpenAI) review before shipping?
-
-A) Run Codex code review — independent diff review with pass/fail gate
-B) Run Codex adversarial challenge — try to break this code
-C) Skip — ship without Codex review
-```
-
-If the user chooses A or B:
-
-**For code review (A):** Run `codex review --base <base>` with a 5-minute timeout.
-Present the full output verbatim under a `CODEX SAYS:` header. Check for `[P1]` markers
-to determine pass/fail gate. Persist the result:
-
-```bash
-~/.codex/skills/gstack/bin/gstack-review-log '{"skill":"codex-review","timestamp":"TIMESTAMP","status":"STATUS","gate":"GATE"}'
-```
-
-If GATE is FAIL, use AskUserQuestion: "Codex found critical issues. Ship anyway?"
-If the user says no, stop. If yes, continue to Step 4.
-
-**For adversarial (B):** Run codex exec with the adversarial prompt (see /codex skill).
-Present findings. This is informational — does not block shipping.
-
-If Codex is not available, skip silently. Continue to Step 4.
-
----
 
 ## Step 4: Version bump (auto-decide)
 
@@ -1114,7 +1078,7 @@ doc updates — the user runs `/ship` and documentation stays current without a 
 - **Never skip tests.** If tests fail, stop.
 - **Never skip the pre-landing review.** If checklist.md is unreadable, stop.
 - **Never force push.** Use regular `git push` only.
-- **Never ask for confirmation** except for MINOR/MAJOR version bumps and pre-landing review ASK items (batched into at most one AskUserQuestion).
+- **Never ask for trivial confirmations** (e.g., "ready to push?", "create PR?"). DO stop for: version bumps (MINOR/MAJOR), pre-landing review findings (ASK items), Codex critical findings ([P1]), and the one-time Codex adoption prompt.
 - **Always use the 4-digit version format** from the VERSION file.
 - **Date format in CHANGELOG:** `YYYY-MM-DD`
 - **Split commits for bisectability** — each commit = one logical change.

@@ -584,6 +584,16 @@ describe('Codex generation (--host codex)', () => {
     expect(fs.existsSync(path.join(AGENTS_DIR, 'gstack-codex'))).toBe(false);
   });
 
+  test('Codex review step stripped from Codex-host ship and review', () => {
+    const shipContent = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-ship', 'SKILL.md'), 'utf-8');
+    expect(shipContent).not.toContain('codex review --base');
+    expect(shipContent).not.toContain('Investigate and fix');
+
+    const reviewContent = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-review', 'SKILL.md'), 'utf-8');
+    expect(reviewContent).not.toContain('codex review --base');
+    expect(reviewContent).not.toContain('Investigate and fix');
+  });
+
   test('--host codex --dry-run freshness', () => {
     const result = Bun.spawnSync(['bun', 'run', 'scripts/gen-skill-docs.ts', '--host', 'codex', '--dry-run'], {
       cwd: ROOT,

@@ -1256,18 +1256,36 @@ describe('Codex skill', () => {
     expect(content).toContain('mktemp');
   });
 
-  test('codex integration in /review offers second opinion', () => {
+  test('codex integration in /review has config-driven review step', () => {
     const content = fs.readFileSync(path.join(ROOT, 'review', 'SKILL.md'), 'utf-8');
-    expect(content).toContain('Codex second opinion');
+    expect(content).toContain('Codex review');
+    expect(content).toContain('codex_reviews');
     expect(content).toContain('codex review');
     expect(content).toContain('adversarial');
+    expect(content).toContain('xhigh');
+    expect(content).toContain('Investigate and fix');
+    expect(content).toContain('CROSS-MODEL');
   });
 
-  test('codex integration in /ship offers review gate', () => {
+  test('codex integration in /ship has config-driven review step', () => {
     const content = fs.readFileSync(path.join(ROOT, 'ship', 'SKILL.md'), 'utf-8');
-    expect(content).toContain('Codex');
+    expect(content).toContain('Codex review');
+    expect(content).toContain('codex_reviews');
     expect(content).toContain('codex review');
     expect(content).toContain('codex-review');
+    expect(content).toContain('xhigh');
+    expect(content).toContain('Investigate and fix');
+  });
+
+  test('codex-host ship/review do NOT contain codex review step', () => {
+    const shipContent = fs.readFileSync(path.join(ROOT, '.agents', 'skills', 'gstack-ship', 'SKILL.md'), 'utf-8');
+    expect(shipContent).not.toContain('codex review --base');
+    expect(shipContent).not.toContain('Investigate and fix');
+
+    const reviewContent = fs.readFileSync(path.join(ROOT, '.agents', 'skills', 'gstack-review', 'SKILL.md'), 'utf-8');
+    expect(reviewContent).not.toContain('codex review --base');
+    expect(reviewContent).not.toContain('codex_reviews');
+    expect(reviewContent).not.toContain('Investigate and fix');
   });
 
   test('codex integration in /plan-eng-review offers plan critique', () => {

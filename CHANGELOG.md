@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.4.0] - 2026-03-20 — Codex Reviews On By Default
+
+### Changed
+
+- **Codex code reviews now run automatically in `/ship` and `/review`.** No more "want a second opinion?" prompt every time — Codex reviews both your code (with a pass/fail gate) and runs an adversarial challenge by default. First-time users get a one-time opt-in prompt; after that, it's hands-free. Configure with `gstack-config set codex_reviews enabled|disabled`.
+- **All Codex operations use maximum reasoning power.** Review, adversarial, and consult modes all use `xhigh` reasoning effort — when an AI is reviewing your code, you want it thinking as hard as possible.
+- **Codex review errors can't corrupt the dashboard.** Auth failures, timeouts, and empty responses are now detected before logging results, so the Review Readiness Dashboard never shows a false "passed" entry. Adversarial stderr is captured separately.
+- **Codex review log includes commit hash.** Staleness detection now works correctly for Codex reviews, matching the same commit-tracking behavior as eng/CEO/design reviews.
+
+### Fixed
+
+- **Codex-for-Codex recursion prevented.** When gstack runs inside Codex CLI (`.agents/skills/`), the Codex review step is completely stripped — no accidental infinite loops.
+
 ## [0.9.3.0] - 2026-03-20 — Windows Support
 
 ### Fixed
