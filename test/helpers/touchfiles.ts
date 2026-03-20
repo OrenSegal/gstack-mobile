@@ -84,6 +84,10 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   'codex-discover-skill':  ['codex/**', '.agents/skills/**', 'test/helpers/codex-session-runner.ts'],
   'codex-review-findings': ['review/**', '.agents/skills/gstack-review/**', 'codex/**', 'test/helpers/codex-session-runner.ts'],
 
+  // Gemini E2E (tests skills via Gemini CLI)
+  'gemini-discover-skill':  ['.agents/skills/**', 'test/helpers/gemini-session-runner.ts'],
+  'gemini-review-findings': ['review/**', '.agents/skills/gstack-review/**', 'test/helpers/gemini-session-runner.ts'],
+
   // QA bootstrap
   'qa-bootstrap': ['qa/**', 'browse/src/**', 'ship/**'],
 
@@ -160,6 +164,7 @@ export const LLM_JUDGE_TOUCHFILES: Record<string, string[]> = {
 export const GLOBAL_TOUCHFILES = [
   'test/helpers/session-runner.ts',
   'test/helpers/codex-session-runner.ts',
+  'test/helpers/gemini-session-runner.ts',
   'test/helpers/eval-store.ts',
   'test/helpers/llm-judge.ts',
   'scripts/gen-skill-docs.ts',
