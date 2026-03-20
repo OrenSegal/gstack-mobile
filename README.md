@@ -198,6 +198,20 @@ Fifteen specialists and six power tools. All slash commands. All Markdown. All f
 | [Contributing](CONTRIBUTING.md) | Dev setup, testing, contributor mode, and dev mode |
 | [Changelog](CHANGELOG.md) | What's new in every version |
 
+## Privacy & Telemetry
+
+gstack includes **opt-in** usage telemetry to help improve the project. Here's exactly what happens:
+
+- **Default is off.** Nothing is sent anywhere unless you explicitly say yes.
+- **On first run,** gstack asks if you want to share anonymous usage data. You can say no.
+- **What's sent (if you opt in):** skill name, duration, success/fail, gstack version, OS. That's it.
+- **What's never sent:** code, file paths, repo names, branch names, prompts, or any user-generated content.
+- **Change anytime:** `gstack-config set telemetry off` disables everything instantly.
+
+Data is stored in [Supabase](https://supabase.com) (open source Firebase alternative). The schema is in [`supabase/migrations/001_telemetry.sql`](supabase/migrations/001_telemetry.sql) — you can verify exactly what's collected. The Supabase publishable key in the repo is a public key (like a Firebase API key) — row-level security policies restrict it to insert-only access.
+
+**Local analytics are always available.** Run `gstack-analytics` to see your personal usage dashboard from the local JSONL file — no remote data needed.
+
 ## Troubleshooting
 
 **Skill not showing up?** `cd ~/.claude/skills/gstack && ./setup`

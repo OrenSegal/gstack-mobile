@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.8.6] - 2026-03-19
+
+### Added
+
+- **You can now see how you use gstack.** Run `gstack-analytics` to see a personal usage dashboard — which skills you use most, how long they take, your success rate. All data stays local on your machine.
+- **Opt-in community telemetry.** On first run, gstack asks if you want to share anonymous usage data (skill names, duration, crash info — never code or file paths). Choose "yes" and you're part of the community pulse. Change anytime with `gstack-config set telemetry off`.
+- **Community health dashboard.** Run `gstack-community-dashboard` to see what the gstack community is building — most popular skills, crash clusters, version distribution. All powered by Supabase.
+- **Install base tracking via update check.** When telemetry is enabled, gstack fires a parallel ping to Supabase during update checks — giving us an install-base count without adding any latency. Respects your telemetry setting (default off). GitHub remains the primary version source.
+- **Crash clustering.** Errors are automatically grouped by type and version in the Supabase backend, so the most impactful bugs surface first.
+- **Upgrade funnel tracking.** We can now see how many people see upgrade prompts vs actually upgrade — helps us ship better releases.
+- **/retro now shows your gstack usage.** Weekly retrospectives include skill usage stats (which skills you used, how often, success rate) alongside your commit history.
+- **Session-specific pending markers.** If a skill crashes mid-run, the next invocation correctly finalizes only that session — no more race conditions between concurrent gstack sessions.
+
 ## [0.8.5] - 2026-03-19
 
 ### Fixed
