@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.0] - 2026-03-19 — Works on Codex, Gemini CLI, and Cursor
+
+**gstack now works on any AI agent that supports the open SKILL.md standard.** Install once, use from Claude Code, OpenAI Codex CLI, Google Gemini CLI, or Cursor. All 21 skills are available in `.agents/skills/` -- just run `./setup --host codex` or `./setup --host auto` and your agent discovers them automatically.
+
+- **One install, four agents.** Claude Code reads from `.claude/skills/`, everything else reads from `.agents/skills/`. Same skills, same prompts, adapted for each host. Hook-based safety skills (careful, freeze, guard) get inline safety advisory prose instead of hooks -- they work everywhere.
+- **Auto-detection.** `./setup --host auto` detects which agents you have installed and sets up both. Already have Claude Code? It still works exactly the same.
+- **Codex-adapted output.** Frontmatter is stripped to just name + description (Codex doesn't need allowed-tools or hooks). Paths are rewritten from `~/.claude/` to `~/.codex/`. The `/codex` skill itself is excluded from Codex output -- it's a Claude wrapper around `codex exec`, which would be self-referential.
+- **CI checks both hosts.** The freshness check now validates Claude and Codex output independently. Stale Codex docs break the build just like stale Claude docs.
+
 ## [0.8.6] - 2026-03-19
 
 ### Added
@@ -70,7 +79,7 @@
 
 ### Fixed
 
-- **`/qa` no longer refuses to use the browser on backend-only changes.** Previously, if your branch only changed prompt templates, config files, or service logic, `/qa` would analyze the diff, conclude "no UI to test," and suggest running evals instead. Now it always opens the browser — falling back to a Quick mode smoke test (homepage + top 5 navigation targets) when no specific pages are identified from the diff.
+- **`/qa` no longer refuses to use the browser on backend-only changes.** Previously, if your branch only changed prompt templates, config files, or service logic, `/qa` would analyze the diff, conclude "no UI to test," and suggest running evals instead. Now it always opens the browser -- falling back to a Quick mode smoke test (homepage + top 5 navigation targets) when no specific pages are identified from the diff.
 
 ## [0.8.0] - 2026-03-19 — Multi-AI Second Opinion
 
