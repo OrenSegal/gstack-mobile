@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.7.0] - 2026-03-21 — Plan File Review Report
+
+### Added
+
+- **Every plan file now shows which reviews have run.** After any review skill finishes (`/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/codex review`), a markdown table is appended to the plan file itself — showing each review's trigger command, purpose, run count, status, and findings summary. Anyone reading the plan can see review status at a glance without checking conversation history.
+- **Review logs now capture richer data.** CEO reviews log scope proposal counts (proposed/accepted/deferred), eng reviews log total issues found, design reviews log before→after scores, and codex reviews log how many findings were fixed. The plan file report uses these fields directly — no more guessing from partial metadata.
+
 ## [0.9.6.0] - 2026-03-21 — Auto-Scaled Adversarial Review
 
 ### Changed

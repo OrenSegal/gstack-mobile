@@ -416,6 +416,30 @@ describe('REVIEW_DASHBOARD resolver', () => {
   });
 });
 
+// --- {{PLAN_FILE_REVIEW_REPORT}} resolver tests ---
+
+describe('PLAN_FILE_REVIEW_REPORT resolver', () => {
+  const REVIEW_SKILLS = ['plan-ceo-review', 'plan-eng-review', 'plan-design-review', 'codex'];
+
+  for (const skill of REVIEW_SKILLS) {
+    test(`plan file review report appears in ${skill} generated file`, () => {
+      const content = fs.readFileSync(path.join(ROOT, skill, 'SKILL.md'), 'utf-8');
+      expect(content).toContain('GSTACK REVIEW REPORT');
+    });
+  }
+
+  test('resolver output contains key report elements', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('Trigger');
+    expect(content).toContain('Findings');
+    expect(content).toContain('VERDICT');
+    expect(content).toContain('/plan-ceo-review');
+    expect(content).toContain('/plan-eng-review');
+    expect(content).toContain('/plan-design-review');
+    expect(content).toContain('/codex review');
+  });
+});
+
 // --- {{SPEC_REVIEW_LOOP}} resolver tests ---
 
 describe('SPEC_REVIEW_LOOP resolver', () => {
