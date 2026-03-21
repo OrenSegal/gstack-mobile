@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.9.0] - 2026-03-21 — Harder Office Hours
+
+### Changed
+
+- **`/office-hours` now pushes back harder.** The diagnostic questions no longer soften toward confident founders. Five changes: hardened response posture ("direct to the point of discomfort"), anti-sycophancy rules (banned phrases like "that's an interesting approach"), 5 worked pushback patterns showing BAD vs GOOD responses, a post-Q1 framing check that challenges undefined terms and hidden assumptions, and a gated escape hatch that asks 2 more questions before letting founders skip. Inspired by user feedback comparing gstack with dontbesilent's diagnostic skill.
+
 ## [0.9.8.0] - 2026-03-21 — Deploy Pipeline + E2E Performance
 
 ### Added
