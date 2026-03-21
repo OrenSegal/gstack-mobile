@@ -515,11 +515,16 @@ Shipped in v0.6.5. TemplateContext in gen-skill-docs.ts bakes skill name into pr
 
 ## Completed
 
-### Deploy pipeline (v0.7.0)
-- /merge skill — review-gated PR merge → superseded by /land-and-deploy
-- Deploy-verify skill → superseded by /land-and-deploy canary verification
-- Post-deploy verification (ship + browse) → superseded by /land-and-deploy
-**Completed:** v0.7.0
+### Deploy pipeline (v0.9.8.0)
+- /land-and-deploy — merge PR, wait for CI/deploy, canary verification
+- /canary — post-deploy monitoring loop with anomaly detection
+- /benchmark — performance regression detection with Core Web Vitals
+- /setup-deploy — one-time deploy platform configuration
+- /review Performance & Bundle Impact pass
+- E2E model pinning (Sonnet default, Opus for quality tests)
+- E2E timing telemetry (first_response_ms, max_inter_turn_ms, wall_clock_ms)
+- test:e2e:fast tier, --retry 2 on all E2E scripts
+**Completed:** v0.9.8.0
 
 ### Phase 1: Foundations (v0.2.0)
 - Rename to gstack
