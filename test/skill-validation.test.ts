@@ -1256,35 +1256,48 @@ describe('Codex skill', () => {
     expect(content).toContain('mktemp');
   });
 
-  test('codex integration in /review has config-driven review step', () => {
+  test('adversarial review in /review auto-scales by diff size', () => {
     const content = fs.readFileSync(path.join(ROOT, 'review', 'SKILL.md'), 'utf-8');
-    expect(content).toContain('Codex review');
-    expect(content).toContain('codex_reviews');
-    expect(content).toContain('codex review');
-    expect(content).toContain('adversarial');
+    expect(content).toContain('Adversarial review (auto-scaled)');
+    // Diff size thresholds
+    expect(content).toContain('< 50');
+    expect(content).toContain('50–199');
+    expect(content).toContain('200+');
+    // All three tiers present
+    expect(content).toContain('Small');
+    expect(content).toContain('Medium tier');
+    expect(content).toContain('Large tier');
+    // Claude adversarial subagent dispatch
+    expect(content).toContain('Agent tool');
+    expect(content).toContain('FIXABLE');
+    expect(content).toContain('INVESTIGATE');
+    // Codex fallback logic
+    expect(content).toContain('CODEX_NOT_AVAILABLE');
+    expect(content).toContain('fall back to the Claude adversarial subagent');
+    // Review log uses new skill name
+    expect(content).toContain('adversarial-review');
     expect(content).toContain('xhigh');
-    expect(content).toContain('Investigate and fix');
-    expect(content).toContain('CROSS-MODEL');
+    expect(content).toContain('ADVERSARIAL REVIEW SYNTHESIS');
   });
 
-  test('codex integration in /ship has config-driven review step', () => {
+  test('adversarial review in /ship auto-scales by diff size', () => {
     const content = fs.readFileSync(path.join(ROOT, 'ship', 'SKILL.md'), 'utf-8');
-    expect(content).toContain('Codex review');
-    expect(content).toContain('codex_reviews');
-    expect(content).toContain('codex review');
-    expect(content).toContain('codex-review');
+    expect(content).toContain('Adversarial review (auto-scaled)');
+    expect(content).toContain('< 50');
+    expect(content).toContain('200+');
+    expect(content).toContain('adversarial-review');
     expect(content).toContain('xhigh');
     expect(content).toContain('Investigate and fix');
   });
 
-  test('codex-host ship/review do NOT contain codex review step', () => {
+  test('codex-host ship/review do NOT contain adversarial review step', () => {
     const shipContent = fs.readFileSync(path.join(ROOT, '.agents', 'skills', 'gstack-ship', 'SKILL.md'), 'utf-8');
     expect(shipContent).not.toContain('codex review --base');
     expect(shipContent).not.toContain('Investigate and fix');
 
     const reviewContent = fs.readFileSync(path.join(ROOT, '.agents', 'skills', 'gstack-review', 'SKILL.md'), 'utf-8');
     expect(reviewContent).not.toContain('codex review --base');
-    expect(reviewContent).not.toContain('codex_reviews');
+    expect(reviewContent).not.toContain('adversarial-review');
     expect(reviewContent).not.toContain('Investigate and fix');
   });
 
@@ -1294,9 +1307,9 @@ describe('Codex skill', () => {
     expect(content).toContain('codex exec');
   });
 
-  test('Review Readiness Dashboard includes Codex Review row', () => {
+  test('Review Readiness Dashboard includes Adversarial Review row', () => {
     const content = fs.readFileSync(path.join(ROOT, 'ship', 'SKILL.md'), 'utf-8');
-    expect(content).toContain('Codex Review');
+    expect(content).toContain('Adversarial');
     expect(content).toContain('codex-review');
   });
 });

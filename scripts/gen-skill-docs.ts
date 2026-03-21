@@ -1094,7 +1094,7 @@ After completing the review, read the review log and config to display the dashb
 ~/.claude/skills/gstack/bin/gstack-review-read
 \`\`\`
 
-Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, plan-design-review, design-review-lite, codex-review). Ignore entries with timestamps older than 7 days. For Design Review, show whichever is more recent between \`plan-design-review\` (full visual audit) and \`design-review-lite\` (code-level check). Append "(FULL)" or "(LITE)" to the status to distinguish. Display:
+Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, plan-design-review, design-review-lite, adversarial-review, codex-review). Ignore entries with timestamps older than 7 days. For the Adversarial row, show whichever is more recent between \`adversarial-review\` (new auto-scaled) and \`codex-review\` (legacy). For Design Review, show whichever is more recent between \`plan-design-review\` (full visual audit) and \`design-review-lite\` (code-level check). Append "(FULL)" or "(LITE)" to the status to distinguish. Display:
 
 \`\`\`
 +====================================================================+
@@ -1105,7 +1105,7 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 | Eng Review      |  1   | 2026-03-16 15:00    | CLEAR     | YES      |
 | CEO Review      |  0   | —                   | —         | no       |
 | Design Review   |  0   | —                   | —         | no       |
-| Codex Review    |  0   | —                   | —         | no       |
+| Adversarial     |  0   | —                   | —         | no       |
 +--------------------------------------------------------------------+
 | VERDICT: CLEARED — Eng Review passed                                |
 +====================================================================+
@@ -1115,7 +1115,7 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 - **Eng Review (required by default):** The only review that gates shipping. Covers architecture, code quality, tests, performance. Can be disabled globally with \\\`gstack-config set skip_eng_review true\\\` (the "don't bother me" setting).
 - **CEO Review (optional):** Use your judgment. Recommend it for big product/business changes, new user-facing features, or scope decisions. Skip for bug fixes, refactors, infra, and cleanup.
 - **Design Review (optional):** Use your judgment. Recommend it for UI/UX changes. Skip for backend-only, infra, or prompt-only changes.
-- **Codex Review (enabled by default when Codex CLI is installed):** Independent review + adversarial challenge from OpenAI Codex CLI. Shows pass/fail gate. Runs automatically when enabled — configure with \\\`gstack-config set codex_reviews enabled|disabled\\\`.
+- **Adversarial Review (automatic):** Auto-scales by diff size. Small diffs (<50 lines) skip adversarial. Medium diffs (50–199) get cross-model adversarial. Large diffs (200+) get all 4 passes: Claude structured, Codex structured, Claude adversarial subagent, Codex adversarial. No configuration needed.
 
 **Verdict logic:**
 - **CLEARED**: Eng Review has >= 1 entry within 7 days with status "clean" (or \\\`skip_eng_review\\\` is \\\`true\\\`)
@@ -1435,135 +1435,146 @@ The screenshot file at \`/tmp/gstack-sketch.png\` can be referenced by downstrea
 (\`/plan-design-review\`, \`/design-review\`) to see what was originally envisioned.`;
 }
 
-function generateCodexReviewStep(ctx: TemplateContext): string {
+function generateAdversarialStep(ctx: TemplateContext): string {
   // Codex host: strip entirely — Codex should never invoke itself
   if (ctx.host === 'codex') return '';
 
   const isShip = ctx.skillName === 'ship';
   const stepNum = isShip ? '3.8' : '5.7';
 
-  return `## Step ${stepNum}: Codex review
+  return `## Step ${stepNum}: Adversarial review (auto-scaled)
 
-Check if the Codex CLI is available and read the user's Codex review preference:
+Adversarial review thoroughness scales automatically based on diff size. No configuration needed.
+
+**Detect diff size and tool availability:**
 
 \`\`\`bash
+DIFF_INS=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
+DIFF_DEL=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
+DIFF_TOTAL=$((DIFF_INS + DIFF_DEL))
 which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
-CODEX_REVIEWS_CFG=$(~/.claude/skills/gstack/bin/gstack-config get codex_reviews 2>/dev/null || true)
-echo "CODEX_REVIEWS: \${CODEX_REVIEWS_CFG:-not_set}"
+# Respect old opt-out
+OLD_CFG=$(~/.claude/skills/gstack/bin/gstack-config get codex_reviews 2>/dev/null || true)
+echo "DIFF_SIZE: $DIFF_TOTAL"
+echo "OLD_CFG: \${OLD_CFG:-not_set}"
 \`\`\`
 
-If \`CODEX_NOT_AVAILABLE\`: skip this step silently. Continue to the next step.
+If \`OLD_CFG\` is \`disabled\`: skip this step silently. Continue to the next step.
 
-If \`CODEX_REVIEWS\` is \`disabled\`: skip this step silently. Continue to the next step.
+**User override:** If the user explicitly requested a specific tier (e.g., "run all passes", "paranoid review", "full adversarial", "do all 4 passes", "thorough review"), honor that request regardless of diff size. Jump to the matching tier section.
 
-If \`CODEX_REVIEWS\` is \`enabled\`: run both code review and adversarial challenge automatically (no prompt). Jump to the "Run Codex" section below.
+**Auto-select tier based on diff size:**
+- **Small (< 50 lines changed):** Skip adversarial review entirely. Print: "Small diff ($DIFF_TOTAL lines) — adversarial review skipped." Continue to the next step.
+- **Medium (50–199 lines changed):** Run Codex adversarial challenge (or Claude adversarial subagent if Codex unavailable). Jump to the "Medium tier" section.
+- **Large (200+ lines changed):** Run all remaining passes — Codex structured review + Claude adversarial subagent + Codex adversarial. Jump to the "Large tier" section.
 
-If \`CODEX_REVIEWS\` is \`not_set\`: use AskUserQuestion to offer the one-time adoption prompt:
+---
 
-\`\`\`
-GStack recommends enabling Codex code reviews — Codex is the super smart quiet engineer friend who will save your butt.
+### Medium tier (50–199 lines)
 
-A) Enable for all future runs (recommended, default)
-B) Try it for now, ask me again later
-C) No thanks, don't ask me again
-\`\`\`
+Claude's structured review already ran. Now add a **cross-model adversarial challenge**.
 
-If the user chooses A: persist the setting and run both:
-\`\`\`bash
-~/.claude/skills/gstack/bin/gstack-config set codex_reviews enabled
-\`\`\`
+**If Codex is available:** run the Codex adversarial challenge. **If Codex is NOT available:** fall back to the Claude adversarial subagent instead.
 
-If the user chooses B: run both this time but do not persist any setting.
+**Codex adversarial:**
 
-If the user chooses C: persist the opt-out and skip:
-\`\`\`bash
-~/.claude/skills/gstack/bin/gstack-config set codex_reviews disabled
-\`\`\`
-Then skip this step. Continue to the next step.
-
-### Run Codex
-
-Always run **both** code review and adversarial challenge. Use a 5-minute timeout (\`timeout: 300000\`) on each Bash call.
-
-First, create a temp file for stderr capture:
-\`\`\`bash
-TMPERR=$(mktemp /tmp/codex-review-XXXXXXXX)
-\`\`\`
-
-**Code review:** Run:
-\`\`\`bash
-codex review --base <base> -c 'model_reasoning_effort="xhigh"' --enable web_search_cached 2>"$TMPERR"
-\`\`\`
-
-After the command completes, read stderr for cost/error info:
-\`\`\`bash
-cat "$TMPERR"
-\`\`\`
-
-Present the full output verbatim under a \`CODEX SAYS (code review):\` header:
-
-\`\`\`
-CODEX SAYS (code review):
-════════════════════════════════════════════════════════════
-<full codex output, verbatim — do not truncate or summarize>
-════════════════════════════════════════════════════════════
-GATE: PASS                    Tokens: N | Est. cost: ~$X.XX
-\`\`\`
-
-Check the output for \`[P1]\` markers. If found: \`GATE: FAIL\`. If no \`[P1]\`: \`GATE: PASS\`.
-
-**If GATE is FAIL:** use AskUserQuestion:
-
-\`\`\`
-Codex found N critical issues in the diff.
-
-A) Investigate and fix now (recommended)
-B) Ship anyway — these issues may cause production problems
-\`\`\`
-
-If the user chooses A: read the Codex findings carefully and work to address them${isShip ? '. After fixing, re-run tests (Step 3) since code has changed' : ''}. Then re-run \`codex review\` to verify the gate is now PASS.
-
-If the user chooses B: continue to the next step.
-
-### Error handling (code review)
-
-Before persisting the gate result, check for errors. All errors are non-blocking — Codex is a quality enhancement, not a prerequisite. Check \`$TMPERR\` output (already read above) for error indicators:
-
-- **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key", tell the user: "Codex authentication failed. Run \\\`codex login\\\` in your terminal to authenticate via ChatGPT." Do NOT persist a review log entry. Continue to the adversarial step (it will likely fail too, but try anyway).
-- **Timeout:** If the Bash call times out (5 min), tell the user: "Codex timed out after 5 minutes. The diff may be too large or the API may be slow." Do NOT persist a review log entry. Skip to cleanup.
-- **Empty response:** If codex returned no stdout output, tell the user: "Codex returned no response. Stderr: <paste relevant error>." Do NOT persist a review log entry. Skip to cleanup.
-
-**Only if codex produced a real review (non-empty stdout):** Persist the code review result:
-\`\`\`bash
-~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"codex-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","gate":"GATE","commit":"'"$(git rev-parse --short HEAD)"'"}'
-\`\`\`
-
-Substitute: STATUS ("clean" if PASS, "issues_found" if FAIL), GATE ("pass" or "fail").
-
-**Adversarial challenge:** Run:
 \`\`\`bash
 TMPERR_ADV=$(mktemp /tmp/codex-adv-XXXXXXXX)
 codex exec "Review the changes on this branch against the base branch. Run git diff origin/<base> to see the diff. Your job is to find ways this code will fail in production. Think like an attacker and a chaos engineer. Find edge cases, race conditions, security holes, resource leaks, failure modes, and silent data corruption paths. Be adversarial. Be thorough. No compliments — just the problems." -s read-only -c 'model_reasoning_effort="xhigh"' --enable web_search_cached 2>"$TMPERR_ADV"
 \`\`\`
 
-After the command completes, read adversarial stderr:
+Use a 5-minute timeout (\`timeout: 300000\`). After the command completes, read stderr:
 \`\`\`bash
 cat "$TMPERR_ADV"
 \`\`\`
 
-Present the full output verbatim under a \`CODEX SAYS (adversarial challenge):\` header. This is informational — it never blocks shipping. If the adversarial command timed out or returned no output, note this to the user and continue.
-${!isShip ? `
-**Cross-model analysis:** After both Codex outputs are presented, compare Codex's findings with your own review findings from the earlier review steps and output:
+Present the full output verbatim. This is informational — it never blocks shipping.
+
+**Error handling:** All errors are non-blocking — adversarial review is a quality enhancement, not a prerequisite.
+- **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "Codex authentication failed. Run \\\`codex login\\\` to authenticate."
+- **Timeout:** "Codex timed out after 5 minutes."
+- **Empty response:** "Codex returned no response. Stderr: <paste relevant error>."
+
+On any Codex error, fall back to the Claude adversarial subagent automatically.
+
+**Claude adversarial subagent** (fallback when Codex unavailable or errored):
+
+Dispatch via the Agent tool. The subagent has fresh context — no checklist bias from the structured review. This genuine independence catches things the primary reviewer is blind to.
+
+Subagent prompt:
+"Read the diff for this branch with \`git diff origin/<base>\`. Think like an attacker and a chaos engineer. Your job is to find ways this code will fail in production. Look for: edge cases, race conditions, security holes, resource leaks, failure modes, silent data corruption, logic errors that produce wrong results silently, error handling that swallows failures, and trust boundary violations. Be adversarial. Be thorough. No compliments — just the problems. For each finding, classify as FIXABLE (you know how to fix it) or INVESTIGATE (needs human judgment)."
+
+Present findings under an \`ADVERSARIAL REVIEW (Claude subagent):\` header. **FIXABLE findings** flow into the same Fix-First pipeline as the structured review. **INVESTIGATE findings** are presented as informational.
+
+If the subagent fails or times out: "Claude adversarial subagent unavailable. Continuing without adversarial review."
+
+**Persist the review result:**
+\`\`\`bash
+~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"medium","commit":"'"$(git rev-parse --short HEAD)"'"}'
+\`\`\`
+Substitute STATUS: "clean" if no findings, "issues_found" if findings exist. SOURCE: "codex" if Codex ran, "claude" if subagent ran. If both failed, do NOT persist.
+
+**Cleanup:** Run \`rm -f "$TMPERR_ADV"\` after processing (if Codex was used).
+
+---
+
+### Large tier (200+ lines)
+
+Claude's structured review already ran. Now run **all three remaining passes** for maximum coverage:
+
+**1. Codex structured review (if available):**
+\`\`\`bash
+TMPERR=$(mktemp /tmp/codex-review-XXXXXXXX)
+codex review --base <base> -c 'model_reasoning_effort="xhigh"' --enable web_search_cached 2>"$TMPERR"
+\`\`\`
+
+Use a 5-minute timeout. Present output under \`CODEX SAYS (code review):\` header.
+Check for \`[P1]\` markers: found → \`GATE: FAIL\`, not found → \`GATE: PASS\`.
+
+If GATE is FAIL, use AskUserQuestion:
+\`\`\`
+Codex found N critical issues in the diff.
+
+A) Investigate and fix now (recommended)
+B) Continue — review will still complete
+\`\`\`
+
+If A: address the findings${isShip ? '. After fixing, re-run tests (Step 3) since code has changed' : ''}. Re-run \`codex review\` to verify.
+
+Read stderr for errors (same error handling as medium tier).
+
+After stderr: \`rm -f "$TMPERR"\`
+
+**2. Claude adversarial subagent:** Dispatch a subagent with the adversarial prompt (same prompt as medium tier). This always runs regardless of Codex availability.
+
+**3. Codex adversarial challenge (if available):** Run \`codex exec\` with the adversarial prompt (same as medium tier).
+
+If Codex is not available for steps 1 and 3, note to the user: "Codex CLI not found — large-diff review ran Claude structured + Claude adversarial (2 of 4 passes). Install Codex for full 4-pass coverage: \`npm install -g @openai/codex\`"
+
+**Persist the review result AFTER all passes complete** (not after each sub-step):
+\`\`\`bash
+~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"large","gate":"GATE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+\`\`\`
+Substitute: STATUS = "clean" if no findings across ALL passes, "issues_found" if any pass found issues. SOURCE = "both" if Codex ran, "claude" if only Claude subagent ran. GATE = the Codex structured review gate result ("pass"/"fail"), or "informational" if Codex was unavailable. If all passes failed, do NOT persist.
+
+---
+
+### Cross-model synthesis (medium and large tiers)
+
+After all passes complete, synthesize findings across all sources:
 
 \`\`\`
-CROSS-MODEL ANALYSIS:
-  Both found: [findings that overlap between Claude and Codex]
-  Only Codex found: [findings unique to Codex]
-  Only Claude found: [findings unique to Claude's review]
-  Agreement rate: X% (N/M total unique findings overlap)
+ADVERSARIAL REVIEW SYNTHESIS (auto: TIER, N lines):
+════════════════════════════════════════════════════════════
+  High confidence (found by multiple sources): [findings agreed on by >1 pass]
+  Unique to Claude structured review: [from earlier step]
+  Unique to Claude adversarial: [from subagent, if ran]
+  Unique to Codex: [from codex adversarial or code review, if ran]
+  Models used: Claude structured ✓  Claude adversarial ✓/✗  Codex ✓/✗
+════════════════════════════════════════════════════════════
 \`\`\`
-` : ''}
-**Cleanup:** Run \`rm -f "$TMPERR" "$TMPERR_ADV"\` after processing.
+
+High-confidence findings (agreed on by multiple sources) should be prioritized for fixes.
 
 ---`;
 }
@@ -1582,7 +1593,8 @@ const RESOLVERS: Record<string, (ctx: TemplateContext) => string> = {
   SPEC_REVIEW_LOOP: generateSpecReviewLoop,
   DESIGN_SKETCH: generateDesignSketch,
   BENEFITS_FROM: generateBenefitsFrom,
-  CODEX_REVIEW_STEP: generateCodexReviewStep,
+  CODEX_REVIEW_STEP: generateAdversarialStep,
+  ADVERSARIAL_STEP: generateAdversarialStep,
 };
 
 // ─── Codex Helpers ───────────────────────────────────────────
