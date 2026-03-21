@@ -19,6 +19,7 @@ allowed-tools:
   - Write
   - Edit
   - AskUserQuestion
+  - WebSearch
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->
@@ -136,6 +137,26 @@ AI-assisted coding makes the marginal cost of completeness near-zero. When you p
 - BAD: "We can skip edge case handling to save time." (Edge case handling costs minutes with CC.)
 - BAD: "Let's defer test coverage to a follow-up PR." (Tests are the cheapest lake to boil.)
 - BAD: Quoting only human-team effort: "This would take 2 weeks." (Say: "2 weeks human / ~1 hour CC.")
+
+## Search Before Building
+
+Before building infrastructure, unfamiliar patterns, or anything the runtime might have a built-in — **search first.** Read `~/.claude/skills/gstack/ETHOS.md` for the full philosophy.
+
+**Three layers of knowledge:**
+- **Layer 1** (tried and true — in distribution). Don't reinvent the wheel. But the cost of checking is near-zero, and once in a while, questioning the tried-and-true is where brilliance occurs.
+- **Layer 2** (new and popular — search for these). But scrutinize: humans are subject to mania. Search results are inputs to your thinking, not answers.
+- **Layer 3** (first principles — prize these above all). Original observations derived from reasoning about the specific problem. The most valuable of all.
+
+**Eureka moment:** When first-principles reasoning reveals conventional wisdom is wrong, name it:
+"EUREKA: Everyone does X because [assumption]. But [evidence] shows this is wrong. Y is better because [reasoning]."
+
+Log eureka moments:
+```bash
+jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> ~/.gstack/analytics/eureka.jsonl 2>/dev/null || true
+```
+Replace SKILL_NAME and ONE_LINE_SUMMARY. Runs inline — don't stop the workflow.
+
+**WebSearch fallback:** If WebSearch is unavailable, skip the search step and note: "Search unavailable — proceeding with in-distribution knowledge only."
 
 ## Contributor Mode
 
@@ -453,6 +474,43 @@ If matches found, read the matching design docs and surface them:
 This enables cross-team discovery — multiple users exploring the same project will see each other's design docs in `~/.gstack/projects/`.
 
 If no matches found, proceed silently.
+
+---
+
+## Phase 2.75: Landscape Awareness
+
+Read ETHOS.md for the full Search Before Building framework (three layers, eureka moments). The preamble's Search Before Building section has the ETHOS.md path.
+
+After understanding the problem through questioning, search for what the world thinks. This is NOT competitive research (that's /design-consultation's job). This is understanding conventional wisdom so you can evaluate where it's wrong.
+
+**Privacy gate:** Before searching, use AskUserQuestion: "I'd like to search for what the world thinks about this space to inform our discussion. This sends generalized category terms (not your specific idea) to a search provider. OK to proceed?"
+Options: A) Yes, search away  B) Skip — keep this session private
+If B: skip this phase entirely and proceed to Phase 3. Use only in-distribution knowledge.
+
+When searching, use **generalized category terms** — never the user's specific product name, proprietary concept, or stealth idea. For example, search "task management app landscape" not "SuperTodo AI-powered task killer."
+
+If WebSearch is unavailable, skip this phase and note: "Search unavailable — proceeding with in-distribution knowledge only."
+
+**Startup mode:** WebSearch for:
+- "[problem space] startup approach {current year}"
+- "[problem space] common mistakes"
+- "why [incumbent solution] fails" OR "why [incumbent solution] works"
+
+**Builder mode:** WebSearch for:
+- "[thing being built] existing solutions"
+- "[thing being built] open source alternatives"
+- "best [thing category] {current year}"
+
+Read the top 2-3 results. Run the three-layer synthesis:
+- **[Layer 1]** What does everyone already know about this space?
+- **[Layer 2]** What are the search results and current discourse saying?
+- **[Layer 3]** Given what WE learned in Phase 2A/2B — is there a reason the conventional approach is wrong?
+
+**Eureka check:** If Layer 3 reasoning reveals a genuine insight, name it: "EUREKA: Everyone does X because they assume [assumption]. But [evidence from our conversation] suggests that's wrong here. This means [implication]." Log the eureka moment (see preamble).
+
+If no eureka moment exists, say: "The conventional wisdom seems sound here. Let's build on it." Proceed to Phase 3.
+
+**Important:** This search feeds Phase 3 (Premise Challenge). If you found reasons the conventional approach fails, those become premises to challenge. If conventional wisdom is solid, that raises the bar for any premise that contradicts it.
 
 ---
 

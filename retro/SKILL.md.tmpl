@@ -172,6 +172,20 @@ If TODOS.md doesn't exist, skip the Backlog Health row.
 
 If the JSONL file doesn't exist or has no entries in the window, skip the Skill Usage row.
 
+**Eureka Moments (if logged):** Read `~/.gstack/analytics/eureka.jsonl` if it exists. Filter entries within the retro time window by `ts` field. For each eureka moment, show the skill that flagged it, the branch, and a one-line summary of the insight. Present as:
+
+```
+| Eureka Moments | 2 this period |
+```
+
+If moments exist, list them:
+```
+  EUREKA /office-hours (branch: garrytan/auth-rethink): "Session tokens don't need server storage — browser crypto API makes client-side JWT validation viable"
+  EUREKA /plan-eng-review (branch: garrytan/cache-layer): "Redis isn't needed here — Bun's built-in LRU cache handles this workload"
+```
+
+If the JSONL file doesn't exist or has no entries in the window, skip the Eureka Moments row.
+
 ### Step 3: Commit Time Distribution
 
 Show hourly histogram in local time using bar chart:

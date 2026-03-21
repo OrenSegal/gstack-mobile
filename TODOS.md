@@ -1,5 +1,19 @@
 # TODOS
 
+## Builder Ethos
+
+### First-time Search Before Building intro
+
+**What:** Add a `generateSearchIntro()` function (like `generateLakeIntro()`) that introduces the Search Before Building principle on first use, with a link to the blog essay.
+
+**Why:** Boil the Lake has an intro flow that links to the essay and marks `.completeness-intro-seen`. Search Before Building should have the same pattern for discoverability.
+
+**Context:** Blocked on a blog post to link to. When the essay exists, add the intro flow with a `.search-intro-seen` marker file. Pattern: `generateLakeIntro()` at gen-skill-docs.ts:176.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** Blog post about Search Before Building
+
 ## Browse
 
 ### Bundle server.ts into compiled binary

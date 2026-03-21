@@ -205,6 +205,17 @@ create_agents_sidecar() {
       fi
     fi
   done
+
+  # Sidecar files that skills reference at runtime
+  for file in ETHOS.md; do
+    local src="$GSTACK_DIR/$file"
+    local dst="$agents_gstack/$file"
+    if [ -f "$src" ]; then
+      if [ -L "$dst" ] || [ ! -e "$dst" ]; then
+        ln -snf "$src" "$dst"
+      fi
+    fi
+  done
 }
 
 # 4. Install for Claude (default)
