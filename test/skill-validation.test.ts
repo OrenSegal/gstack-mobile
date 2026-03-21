@@ -223,6 +223,10 @@ describe('Update check preamble', () => {
     'design-review/SKILL.md',
     'design-consultation/SKILL.md',
     'document-release/SKILL.md',
+    'canary/SKILL.md',
+    'benchmark/SKILL.md',
+    'land-and-deploy/SKILL.md',
+    'setup-deploy/SKILL.md',
   ];
 
   for (const skill of skillsWithUpdateCheck) {
@@ -535,6 +539,10 @@ describe('v0.4.1 preamble features', () => {
     'design-review/SKILL.md',
     'design-consultation/SKILL.md',
     'document-release/SKILL.md',
+    'canary/SKILL.md',
+    'benchmark/SKILL.md',
+    'land-and-deploy/SKILL.md',
+    'setup-deploy/SKILL.md',
   ];
 
   for (const skill of skillsWithPreamble) {
@@ -721,6 +729,10 @@ describe('Contributor mode preamble structure', () => {
     'design-review/SKILL.md',
     'design-consultation/SKILL.md',
     'document-release/SKILL.md',
+    'canary/SKILL.md',
+    'benchmark/SKILL.md',
+    'land-and-deploy/SKILL.md',
+    'setup-deploy/SKILL.md',
   ];
 
   for (const skill of skillsWithPreamble) {

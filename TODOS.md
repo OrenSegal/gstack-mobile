@@ -177,17 +177,6 @@
 **Priority:** P2
 **Depends on:** None
 
-### Post-deploy verification (ship + browse)
-
-**What:** After push, browse staging/preview URL, screenshot key pages, check console for JS errors, compare staging vs prod via snapshot diff. Include verification screenshots in PR body. STOP if critical errors found.
-
-**Why:** Catch deployment-time regressions (JS errors, broken layouts) before merge.
-
-**Context:** Requires S3 upload infrastructure for PR screenshots. Pairs with visual PR annotations.
-
-**Effort:** L
-**Priority:** P2
-**Depends on:** /setup-gstack-upload, visual PR annotations
 
 ### Visual verification with screenshots in PR body
 
@@ -348,14 +337,6 @@
 **Priority:** P3
 **Depends on:** Video recording
 
-### Deploy-verify skill
-
-**What:** Lightweight post-deploy smoke test: hit key URLs, verify 200s, screenshot critical pages, console error check, compare against baseline snapshots. Pass/fail with evidence.
-
-**Why:** Fast post-deploy confidence check, separate from full QA.
-
-**Effort:** M
-**Priority:** P2
 
 ### GitHub Actions eval upload
 
@@ -369,14 +350,11 @@
 **Priority:** P2
 **Depends on:** Eval persistence (shipped in v0.3.6)
 
-### E2E model pinning
+### E2E model pinning — SHIPPED
 
-**What:** Pin E2E tests to claude-sonnet-4-6 for cost efficiency, add retry:2 for flaky LLM responses.
+~~**What:** Pin E2E tests to claude-sonnet-4-6 for cost efficiency, add retry:2 for flaky LLM responses.~~
 
-**Why:** Reduce E2E test cost and flakiness.
-
-**Effort:** XS
-**Priority:** P2
+Shipped: Default model changed to Sonnet for structure tests (~30), Opus retained for quality tests (~10). `--retry 2` added. `EVALS_MODEL` env var for override. `test:e2e:fast` tier added. Rate-limit telemetry (first_response_ms, max_inter_turn_ms) and wall_clock_ms tracking added to eval-store.
 
 ### Eval web dashboard
 
@@ -486,17 +464,6 @@ Shipped in v0.8.3. Step 8.5 added to `/ship` — after creating the PR, `/ship` 
 **Priority:** P3
 **Depends on:** gstack-diff-scope (shipped)
 
-### /merge skill — review-gated PR merge
-
-**What:** Create a `/merge` skill that merges an approved PR, but first checks the Review Readiness Dashboard and runs `/review` (Fix-First) if code review hasn't been done. Separates "ship" (create PR) from "merge" (land it).
-
-**Why:** Currently `/review` runs inside `/ship` Step 3.5 but isn't tracked as a gate. A `/merge` skill ensures code review always happens before landing, and enables workflows where someone else reviews the PR first.
-
-**Context:** `/ship` creates the PR. `/merge` would: check dashboard → run `/review` if needed → `gh pr merge`. This is where code review tracking belongs — at merge time, not at plan time.
-
-**Effort:** M
-**Priority:** P2
-**Depends on:** Ship Confidence Dashboard (shipped)
 
 ## Completeness
 
@@ -547,6 +514,12 @@ Shipped in v0.6.5. TemplateContext in gen-skill-docs.ts bakes skill name into pr
 **Depends on:** Telemetry data showing freeze hook fires in real /investigate sessions
 
 ## Completed
+
+### Deploy pipeline (v0.7.0)
+- /merge skill — review-gated PR merge → superseded by /land-and-deploy
+- Deploy-verify skill → superseded by /land-and-deploy canary verification
+- Post-deploy verification (ship + browse) → superseded by /land-and-deploy
+**Completed:** v0.7.0
 
 ### Phase 1: Foundations (v0.2.0)
 - Rename to gstack

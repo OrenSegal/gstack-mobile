@@ -1648,6 +1648,42 @@ High-confidence findings (agreed on by multiple sources) should be prioritized f
 ---`;
 }
 
+function generateDeployBootstrap(_ctx: TemplateContext): string {
+  return `\`\`\`bash
+# Check for persisted deploy config in CLAUDE.md
+DEPLOY_CONFIG=$(grep -A 20 "## Deploy Configuration" CLAUDE.md 2>/dev/null || echo "NO_CONFIG")
+echo "$DEPLOY_CONFIG"
+
+# If config exists, parse it
+if [ "$DEPLOY_CONFIG" != "NO_CONFIG" ]; then
+  PROD_URL=$(echo "$DEPLOY_CONFIG" | grep -i "production.*url" | head -1 | sed 's/.*: *//')
+  PLATFORM=$(echo "$DEPLOY_CONFIG" | grep -i "platform" | head -1 | sed 's/.*: *//')
+  echo "PERSISTED_PLATFORM:$PLATFORM"
+  echo "PERSISTED_URL:$PROD_URL"
+fi
+
+# Auto-detect platform from config files
+[ -f fly.toml ] && echo "PLATFORM:fly"
+[ -f render.yaml ] && echo "PLATFORM:render"
+([ -f vercel.json ] || [ -d .vercel ]) && echo "PLATFORM:vercel"
+[ -f netlify.toml ] && echo "PLATFORM:netlify"
+[ -f Procfile ] && echo "PLATFORM:heroku"
+([ -f railway.json ] || [ -f railway.toml ]) && echo "PLATFORM:railway"
+
+# Detect deploy workflows
+for f in .github/workflows/*.yml .github/workflows/*.yaml; do
+  [ -f "$f" ] && grep -qiE "deploy|release|production|staging|cd" "$f" 2>/dev/null && echo "DEPLOY_WORKFLOW:$f"
+done
+\`\`\`
+
+If \`PERSISTED_PLATFORM\` and \`PERSISTED_URL\` were found in CLAUDE.md, use them directly
+and skip manual detection. If no persisted config exists, use the auto-detected platform
+to guide deploy verification. If nothing is detected, ask the user via AskUserQuestion
+in the decision tree below.
+
+If you want to persist deploy settings for future runs, suggest the user run \`/setup-deploy\`.`;
+}
+
 const RESOLVERS: Record<string, (ctx: TemplateContext) => string> = {
   COMMAND_REFERENCE: generateCommandReference,
   SNAPSHOT_FLAGS: generateSnapshotFlags,
@@ -1665,6 +1701,7 @@ const RESOLVERS: Record<string, (ctx: TemplateContext) => string> = {
   BENEFITS_FROM: generateBenefitsFrom,
   CODEX_REVIEW_STEP: generateAdversarialStep,
   ADVERSARIAL_STEP: generateAdversarialStep,
+  DEPLOY_BOOTSTRAP: generateDeployBootstrap,
 };
 
 // ─── Codex Helpers ───────────────────────────────────────────

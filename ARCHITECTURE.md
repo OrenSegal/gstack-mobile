@@ -285,7 +285,7 @@ The `parseNDJSON()` function is pure — no I/O, no side effects — making it i
 ### Observability data flow
 
 ```
-  skill-e2e.test.ts
+  skill-e2e-*.test.ts
         │
         │ generates runId, passes testName + runId to each call
         │

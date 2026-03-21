@@ -191,14 +191,17 @@ describe('detectBaseBranch', () => {
   });
 });
 
-// --- Completeness: every testName in skill-e2e.test.ts has a TOUCHFILES entry ---
+// --- Completeness: every testName in skill-e2e-*.test.ts has a TOUCHFILES entry ---
 
 describe('TOUCHFILES completeness', () => {
   test('every E2E testName has a TOUCHFILES entry', () => {
-    const e2eContent = fs.readFileSync(
-      path.join(ROOT, 'test', 'skill-e2e.test.ts'),
-      'utf-8',
-    );
+    // Read all split E2E test files
+    const testDir = path.join(ROOT, 'test');
+    const e2eFiles = fs.readdirSync(testDir).filter(f => f.startsWith('skill-e2e-') && f.endsWith('.test.ts'));
+    let e2eContent = '';
+    for (const f of e2eFiles) {
+      e2eContent += fs.readFileSync(path.join(testDir, f), 'utf-8') + '\n';
+    }
 
     // Extract all testName: 'value' entries
     const testNameRegex = /testName:\s*['"`]([^'"`]+)['"`]/g;
