@@ -840,7 +840,7 @@ Save report to `.gstack/deploy-reports/{date}-pr{number}-deploy.md`.
 Log to the review dashboard:
 
 ```bash
-eval $(~/.codex/skills/gstack/bin/gstack-slug 2>/dev/null)
+source <(~/.codex/skills/gstack/bin/gstack-slug 2>/dev/null)
 mkdir -p ~/.gstack/projects/$SLUG
 ```
 

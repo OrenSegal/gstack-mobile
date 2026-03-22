@@ -290,7 +290,7 @@ When the user types `/benchmark`, run this skill.
 ### Phase 1: Setup
 
 ```bash
-eval $(~/.codex/skills/gstack/bin/gstack-slug 2>/dev/null || echo "SLUG=unknown")
+source <(~/.codex/skills/gstack/bin/gstack-slug 2>/dev/null || echo "SLUG=unknown")
 mkdir -p .gstack/benchmark-reports
 mkdir -p .gstack/benchmark-reports/baselines
 ```

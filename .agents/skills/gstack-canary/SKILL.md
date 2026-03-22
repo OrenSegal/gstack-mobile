@@ -308,7 +308,7 @@ When the user types `/canary`, run this skill.
 ### Phase 1: Setup
 
 ```bash
-eval $(~/.codex/skills/gstack/bin/gstack-slug 2>/dev/null || echo "SLUG=unknown")
+source <(~/.codex/skills/gstack/bin/gstack-slug 2>/dev/null || echo "SLUG=unknown")
 mkdir -p .gstack/canary-reports
 mkdir -p .gstack/canary-reports/baselines
 mkdir -p .gstack/canary-reports/screenshots
@@ -458,7 +458,7 @@ Save report to `.gstack/canary-reports/{date}-canary.md` and `.gstack/canary-rep
 Log the result for the review dashboard:
 
 ```bash
-eval $(~/.codex/skills/gstack/bin/gstack-slug 2>/dev/null)
+source <(~/.codex/skills/gstack/bin/gstack-slug 2>/dev/null)
 mkdir -p ~/.gstack/projects/$SLUG
 ```
 

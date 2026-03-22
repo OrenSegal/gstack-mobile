@@ -241,6 +241,7 @@ describe('Update check preamble', () => {
     'benchmark/SKILL.md',
     'land-and-deploy/SKILL.md',
     'setup-deploy/SKILL.md',
+    'cso/SKILL.md',
   ];
 
   for (const skill of skillsWithUpdateCheck) {
@@ -557,6 +558,7 @@ describe('v0.4.1 preamble features', () => {
     'benchmark/SKILL.md',
     'land-and-deploy/SKILL.md',
     'setup-deploy/SKILL.md',
+    'cso/SKILL.md',
   ];
 
   for (const skill of skillsWithPreamble) {
@@ -835,7 +837,7 @@ describe('Completeness Principle in generated SKILL.md files', () => {
     'design-review/SKILL.md',
     'design-consultation/SKILL.md',
     'document-release/SKILL.md',
-  ];
+    'cso/SKILL.md',  ];
 
   for (const skill of skillsWithPreamble) {
     test(`${skill} contains Completeness Principle section`, () => {
@@ -992,6 +994,15 @@ describe('gstack-slug', () => {
     expect(lines.length).toBe(2);
     expect(lines[0]).toMatch(/^SLUG=.+/);
     expect(lines[1]).toMatch(/^BRANCH=.+/);
+  });
+
+  test('output values contain only safe characters (no shell metacharacters)', () => {
+    const result = Bun.spawnSync([SLUG_BIN], { cwd: ROOT, stdout: 'pipe', stderr: 'pipe' });
+    const slug = result.stdout.toString().match(/SLUG=(.*)/)?.[1] ?? '';
+    const branch = result.stdout.toString().match(/BRANCH=(.*)/)?.[1] ?? '';
+    // Only alphanumeric, dot, dash, underscore are allowed (#133)
+    expect(slug).toMatch(/^[a-zA-Z0-9._-]+$/);
+    expect(branch).toMatch(/^[a-zA-Z0-9._-]+$/);
   });
 });
 
