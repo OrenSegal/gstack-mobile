@@ -78,7 +78,8 @@ gstack/
 ├── land-and-deploy/ # /land-and-deploy skill (merge → deploy → canary verify)
 ├── office-hours/    # /office-hours skill (YC Office Hours — startup diagnostic + builder brainstorm)
 ├── investigate/     # /investigate skill (systematic root-cause debugging)
-├── retro/           # Retrospective skill
+├── retro/           # Retrospective skill (includes /retro global cross-project mode)
+├── bin/             # Standalone scripts (gstack-global-discover for cross-tool session discovery)
 ├── document-release/ # /document-release skill (post-ship doc updates)
 ├── cso/             # /cso skill (OWASP Top 10 + STRIDE security audit)
 ├── design-consultation/ # /design-consultation skill (design system from scratch)

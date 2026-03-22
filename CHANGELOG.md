@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.11.1.0] - 2026-03-22 — Global Retro: Cross-Project AI Coding Retrospective
+
+### Added
+
+- **`/retro global` — see everything you shipped across every project in one report.** Scans your Claude Code, Codex CLI, and Gemini CLI sessions, traces each back to its git repo, deduplicates by remote, then runs a full retro across all of them. Global shipping streak, context-switching metrics, per-project breakdowns with personal contributions, and cross-tool usage patterns. Run `/retro global 14d` for a two-week view.
+- **Per-project personal contributions in global retro.** Each project in the global retro now shows YOUR commits, LOC, key work, commit type mix, and biggest ship — separate from team totals. Solo projects say "Solo project — all commits are yours." Team projects you didn't touch show session count only.
+- **`gstack-global-discover` — the engine behind global retro.** Standalone discovery script that finds all AI coding sessions on your machine, resolves working directories to git repos, normalizes SSH/HTTPS remotes for dedup, and outputs structured JSON. Compiled binary ships with gstack — no `bun` runtime needed.
+
+### Fixed
+
+- **Discovery script reads only the first few KB of session files** instead of loading entire multi-MB JSONL transcripts into memory. Prevents OOM on machines with extensive coding history.
+- **Claude Code session counts are now accurate.** Previously counted all JSONL files in a project directory; now only counts files modified within the time window.
+- **Week windows (`1w`, `2w`) are now midnight-aligned** like day windows, so `/retro global 1w` and `/retro global 7d` produce consistent results.
+
 ## [0.11.0.0] - 2026-03-22 — /cso: Zero-Noise Security Audits
 
 ### Added
@@ -53,12 +67,6 @@
 ### Added
 
 - **`/autoplan` — one command, fully reviewed plan.** Hand it a rough plan and it runs the full CEO → design → eng review pipeline automatically. Reads the actual review skill files from disk (same depth, same rigor as running each review manually) and makes intermediate decisions using 6 encoded principles: completeness, boil lakes, pragmatic, DRY, explicit over clever, bias toward action. Taste decisions (close approaches, borderline scope, codex disagreements) surface at a final approval gate. You approve, override, interrogate, or revise. Saves a restore point so you can re-run from scratch. Writes review logs compatible with `/ship`'s dashboard.
-
-## [0.9.9.0] - 2026-03-21 — Harder Office Hours
-
-### Changed
-
-- **`/office-hours` now pushes back harder.** The diagnostic questions no longer soften toward confident founders. Five changes: hardened response posture ("direct to the point of discomfort"), anti-sycophancy rules (banned phrases like "that's an interesting approach"), 5 worked pushback patterns showing BAD vs GOOD responses, a post-Q1 framing check that challenges undefined terms and hidden assumptions, and a gated escape hatch that asks 2 more questions before letting founders skip. Inspired by user feedback comparing gstack with dontbesilent's diagnostic skill.
 
 ## [0.9.8.0] - 2026-03-21 — Deploy Pipeline + E2E Performance
 
