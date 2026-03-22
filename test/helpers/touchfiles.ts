@@ -116,6 +116,9 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   'benchmark-workflow':         ['benchmark/**', 'browse/src/**'],
   'setup-deploy-workflow':      ['setup-deploy/**', 'scripts/gen-skill-docs.ts'],
 
+  // Autoplan
+  'autoplan-core':  ['autoplan/**', 'plan-ceo-review/**', 'plan-eng-review/**', 'plan-design-review/**'],
+
   // Skill routing — journey-stage tests (depend on ALL skill descriptions)
   'journey-ideation':       ['*/SKILL.md.tmpl', 'SKILL.md.tmpl', 'scripts/gen-skill-docs.ts'],
   'journey-plan-eng':       ['*/SKILL.md.tmpl', 'SKILL.md.tmpl', 'scripts/gen-skill-docs.ts'],

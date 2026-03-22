@@ -99,6 +99,20 @@ describe('SKILL.md command validation', () => {
     const result = validateSkill(skill);
     expect(result.snapshotFlagErrors).toHaveLength(0);
   });
+
+  test('all $B commands in autoplan/SKILL.md are valid browse commands', () => {
+    const skill = path.join(ROOT, 'autoplan', 'SKILL.md');
+    if (!fs.existsSync(skill)) return;
+    const result = validateSkill(skill);
+    expect(result.invalid).toHaveLength(0);
+  });
+
+  test('all snapshot flags in autoplan/SKILL.md are valid', () => {
+    const skill = path.join(ROOT, 'autoplan', 'SKILL.md');
+    if (!fs.existsSync(skill)) return;
+    const result = validateSkill(skill);
+    expect(result.snapshotFlagErrors).toHaveLength(0);
+  });
 });
 
 describe('Command registry consistency', () => {
