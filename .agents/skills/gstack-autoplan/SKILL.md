@@ -27,6 +27,9 @@ _PROACTIVE=$(~/.codex/skills/gstack/bin/gstack-config get proactive 2>/dev/null 
 _BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 echo "BRANCH: $_BRANCH"
 echo "PROACTIVE: $_PROACTIVE"
+source <(~/.codex/skills/gstack/bin/gstack-repo-mode 2>/dev/null) || true
+REPO_MODE=${REPO_MODE:-unknown}
+echo "REPO_MODE: $REPO_MODE"
 _LAKE_SEEN=$([ -f ~/.gstack/.completeness-intro-seen ] && echo "yes" || echo "no")
 echo "LAKE_INTRO: $_LAKE_SEEN"
 _TEL=$(~/.codex/skills/gstack/bin/gstack-config get telemetry 2>/dev/null || true)
@@ -126,6 +129,18 @@ AI-assisted coding makes the marginal cost of completeness near-zero. When you p
 - BAD: "We can skip edge case handling to save time." (Edge case handling costs minutes with CC.)
 - BAD: "Let's defer test coverage to a follow-up PR." (Tests are the cheapest lake to boil.)
 - BAD: Quoting only human-team effort: "This would take 2 weeks." (Say: "2 weeks human / ~1 hour CC.")
+
+## Repo Ownership Mode — See Something, Say Something
+
+`REPO_MODE` from the preamble tells you who owns issues in this repo:
+
+- **`solo`** — One person does 80%+ of the work. They own everything. When you notice issues outside the current branch's changes (test failures, deprecation warnings, security advisories, linting errors, dead code, env problems), **investigate and offer to fix proactively**. The solo dev is the only person who will fix it. Default to action.
+- **`collaborative`** — Multiple active contributors. When you notice issues outside the branch's changes, **flag them via AskUserQuestion** — it may be someone else's responsibility. Default to asking, not fixing.
+- **`unknown`** — Treat as collaborative (safer default — ask before fixing).
+
+**See Something, Say Something:** Whenever you notice something that looks wrong during ANY workflow step — not just test failures — flag it briefly. One sentence: what you noticed and its impact. In solo mode, follow up with "Want me to fix it?" In collaborative mode, just flag it and move on.
+
+Never let a noticed issue silently pass. The whole point is proactive communication.
 
 ## Search Before Building
 
@@ -319,6 +334,34 @@ Examples: run codex (always yes), run evals (always yes), reduce scope on a comp
 
 ---
 
+## What "Auto-Decide" Means
+
+Auto-decide replaces the USER'S judgment with the 6 principles. It does NOT replace
+the ANALYSIS. Every section in the loaded skill files must still be executed at the
+same depth as the interactive version. The only thing that changes is who answers the
+AskUserQuestion: you do, using the 6 principles, instead of the user.
+
+**You MUST still:**
+- READ the actual code, diffs, and files each section references
+- PRODUCE every output the section requires (diagrams, tables, registries, artifacts)
+- IDENTIFY every issue the section is designed to catch
+- DECIDE each issue using the 6 principles (instead of asking the user)
+- LOG each decision in the audit trail
+- WRITE all required artifacts to disk
+
+**You MUST NOT:**
+- Compress a review section into a one-liner table row
+- Write "no issues found" without showing what you examined
+- Skip a section because "it doesn't apply" without stating what you checked and why
+- Produce a summary instead of the required output (e.g., "architecture looks good"
+  instead of the ASCII dependency graph the section requires)
+
+"No issues found" is a valid output for a section — but only after doing the analysis.
+State what you examined and why nothing was flagged (1-2 sentences minimum).
+"Skipped" is never valid for a non-skip-listed section.
+
+---
+
 ## Phase 0: Intake + Restore Point
 
 ### Step 1: Capture restore point
@@ -400,6 +443,31 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   Duplicates → reject (P4). Borderline (3-5 files) → mark TASTE DECISION.
 - All 10 review sections: run fully, auto-decide each issue, log every decision.
 
+**Required execution checklist (CEO):**
+
+Step 0 (0A-0F) — run each sub-step and produce:
+- 0A: Premise challenge with specific premises named and evaluated
+- 0B: Existing code leverage map (sub-problems → existing code)
+- 0C: Dream state diagram (CURRENT → THIS PLAN → 12-MONTH IDEAL)
+- 0C-bis: Implementation alternatives table (2-3 approaches with effort/risk/pros/cons)
+- 0D: Mode-specific analysis with scope decisions logged
+- 0E: Temporal interrogation (HOUR 1 → HOUR 6+)
+- 0F: Mode selection confirmation
+
+Sections 1-10 — for EACH section, run the evaluation criteria from the loaded skill file:
+- Sections WITH findings: full analysis, auto-decide each issue, log to audit trail
+- Sections with NO findings: 1-2 sentences stating what was examined and why nothing
+  was flagged. NEVER compress a section to just its name in a table row.
+- Section 11 (Design): run only if UI scope was detected in Phase 0
+
+**Mandatory outputs from Phase 1:**
+- "NOT in scope" section with deferred items and rationale
+- "What already exists" section mapping sub-problems to existing code
+- Error & Rescue Registry table (from Section 2)
+- Failure Modes Registry table (from review sections)
+- Dream state delta (where this plan leaves us vs 12-month ideal)
+- Completion Summary (the full summary table from the CEO skill)
+
 ---
 
 ## Phase 2: Design Review (conditional — skip if no UI scope)
@@ -430,6 +498,42 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
 - Test plan: generate artifact at `~/.gstack/projects/$SLUG/{user}-{branch}-test-plan-{datetime}.md`
 - TODOS.md: collect all deferred scope expansions from Phase 1, auto-write
 
+**Required execution checklist (Eng):**
+
+1. Step 0 (Scope Challenge): Read actual code referenced by the plan. Map each
+   sub-problem to existing code. Run the complexity check. Produce concrete findings.
+
+2. Step 0.5 (Codex): Run if available. Present full output under CODEX SAYS header.
+
+3. Section 1 (Architecture): Produce ASCII dependency graph showing new components
+   and their relationships to existing ones. Evaluate coupling, scaling, security.
+
+4. Section 2 (Code Quality): Identify DRY violations, naming issues, complexity.
+   Reference specific files and patterns. Auto-decide each finding.
+
+5. **Section 3 (Test Review) — NEVER SKIP OR COMPRESS.**
+   This section requires reading actual code, not summarizing from memory.
+   - Read the diff or the plan's affected files
+   - Build the test diagram: list every NEW UX flow, data flow, codepath, and branch
+   - For EACH item in the diagram: what type of test covers it? Does one exist? Gaps?
+   - For LLM/prompt changes: which eval suites must run?
+   - Auto-deciding test gaps means: identify the gap → decide whether to add a test
+     or defer (with rationale and principle) → log the decision. It does NOT mean
+     skipping the analysis.
+   - Write the test plan artifact to disk
+
+6. Section 4 (Performance): Evaluate N+1 queries, memory, caching, slow paths.
+
+**Mandatory outputs from Phase 3:**
+- "NOT in scope" section
+- "What already exists" section
+- Architecture ASCII diagram (Section 1)
+- Test diagram mapping codepaths to coverage (Section 3)
+- Test plan artifact written to disk (Section 3)
+- Failure modes registry with critical gap flags
+- Completion Summary (the full summary from the Eng skill)
+- TODOS.md updates (collected from all phases)
+
 ---
 
 ## Decision Audit Trail
@@ -446,6 +550,44 @@ After each auto-decision, append a row to the plan file using Edit:
 
 Write one row per decision incrementally (via Edit). This keeps the audit on disk,
 not accumulated in conversation context.
+
+---
+
+## Pre-Gate Verification
+
+Before presenting the Final Approval Gate, verify that required outputs were actually
+produced. Check the plan file and conversation for each item.
+
+**Phase 1 (CEO) outputs:**
+- [ ] Premise challenge with specific premises named (not just "premises accepted")
+- [ ] All applicable review sections have findings OR explicit "examined X, nothing flagged"
+- [ ] Error & Rescue Registry table produced (or noted N/A with reason)
+- [ ] Failure Modes Registry table produced (or noted N/A with reason)
+- [ ] "NOT in scope" section written
+- [ ] "What already exists" section written
+- [ ] Dream state delta written
+- [ ] Completion Summary produced
+
+**Phase 2 (Design) outputs — only if UI scope detected:**
+- [ ] All 7 dimensions evaluated with scores
+- [ ] Issues identified and auto-decided
+
+**Phase 3 (Eng) outputs:**
+- [ ] Scope challenge with actual code analysis (not just "scope is fine")
+- [ ] Architecture ASCII diagram produced
+- [ ] Test diagram mapping codepaths to test coverage
+- [ ] Test plan artifact written to disk at ~/.gstack/projects/$SLUG/
+- [ ] "NOT in scope" section written
+- [ ] "What already exists" section written
+- [ ] Failure modes registry with critical gap assessment
+- [ ] Completion Summary produced
+
+**Audit trail:**
+- [ ] Decision Audit Trail has at least one row per auto-decision (not empty)
+
+If ANY checkbox above is missing, go back and produce the missing output. Max 2
+attempts — if still missing after retrying twice, proceed to the gate with a warning
+noting which items are incomplete. Do not loop indefinitely.
 
 ---
 
@@ -531,5 +673,6 @@ Suggest next step: `/ship` when ready to create the PR.
 - **Never abort.** The user chose /autoplan. Respect that choice. Surface all taste decisions, never redirect to interactive review.
 - **Premises are the one gate.** The only non-auto-decided AskUserQuestion is the premise confirmation in Phase 1.
 - **Log every decision.** No silent auto-decisions. Every choice gets a row in the audit trail.
-- **Full depth.** Do not compress or skip sections from the loaded skill files (except the skip list in Phase 0).
+- **Full depth means full depth.** Do not compress or skip sections from the loaded skill files (except the skip list in Phase 0). "Full depth" means: read the code the section asks you to read, produce the outputs the section requires, identify every issue, and decide each one. A one-sentence summary of a section is not "full depth" — it is a skip. If you catch yourself writing fewer than 3 sentences for any review section, you are likely compressing.
+- **Artifacts are deliverables.** Test plan artifact, failure modes registry, error/rescue table, ASCII diagrams — these must exist on disk or in the plan file when the review completes. If they don't exist, the review is incomplete.
 - **Sequential order.** CEO → Design → Eng. Each phase builds on the last.
