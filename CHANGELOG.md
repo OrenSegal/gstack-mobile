@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.11.10.0] - 2026-03-23 — CI Evals on Ubicloud
+
+### Added
+
+- **E2E evals now run in CI on every PR.** 12 parallel GitHub Actions runners on Ubicloud spin up per PR, each running one test suite. Docker image pre-bakes bun, node, Claude CLI, and deps so setup is near-instant. Results posted as a PR comment with pass/fail + cost breakdown.
+- **3x faster eval runs.** All E2E tests run concurrently within files via `testConcurrentIfSelected`. Wall clock drops from ~18min to ~6min — limited by the slowest individual test, not sequential sum.
+- **Docker CI image** (`Dockerfile.ci`) with pre-installed toolchain. Rebuilds automatically when Dockerfile or package.json changes, cached by content hash in GHCR.
+
+### Fixed
+
+- **Routing tests now work in CI.** Skills are installed at top-level `.claude/skills/` instead of nested under `.claude/skills/gstack/` — project-level skill discovery doesn't recurse into subdirectories.
+
+### For contributors
+
+- `EVALS_CONCURRENCY=40` in CI for maximum parallelism (local default stays at 15)
+- Ubicloud runners at ~$0.006/run (10x cheaper than GitHub standard runners)
+- `workflow_dispatch` trigger for manual re-runs
+
 ## [0.11.9.0] - 2026-03-23 — Codex Skill Loading Fix
 
 ### Fixed
