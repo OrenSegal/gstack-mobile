@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.7.0] - 2026-03-23 — /review → /ship Handoff Fix
+
+### Fixed
+
+- **`/review` now satisfies the ship readiness gate.** Previously, running `/review` before `/ship` always showed "NOT CLEARED" because `/review` didn't log its result and `/ship` only looked for `/plan-eng-review`. Now `/review` persists its outcome to the review log, and all dashboards recognize both `/review` (diff-scoped) and `/plan-eng-review` (plan-stage) as valid Eng Review sources.
+- **Ship abort prompt now mentions both review options.** When Eng Review is missing, `/ship` suggests "run `/review` or `/plan-eng-review`" instead of only mentioning `/plan-eng-review`.
+
+### For contributors
+
+- Based on PR #338 by @malikrohail. DRY improvement per eng review: updated the shared `REVIEW_DASHBOARD` resolver instead of creating a duplicate ship-only resolver.
+- 4 new validation tests covering review-log persistence, dashboard propagation, and abort text.
+
 ## [0.11.6.0] - 2026-03-23 — Infrastructure-First Security Audit
 
 ### Added
