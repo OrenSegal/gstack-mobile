@@ -705,6 +705,50 @@ describe('DESIGN_SKETCH resolver', () => {
   });
 });
 
+// --- {{CODEX_SECOND_OPINION}} resolver tests ---
+
+describe('CODEX_SECOND_OPINION resolver', () => {
+  const content = fs.readFileSync(path.join(ROOT, 'office-hours', 'SKILL.md'), 'utf-8');
+  const codexContent = fs.readFileSync(path.join(ROOT, '.agents', 'skills', 'gstack-office-hours', 'SKILL.md'), 'utf-8');
+
+  test('Phase 3.5 section appears in office-hours SKILL.md', () => {
+    expect(content).toContain('Phase 3.5: Cross-Model Second Opinion');
+  });
+
+  test('contains codex exec invocation', () => {
+    expect(content).toContain('codex exec');
+  });
+
+  test('contains opt-in AskUserQuestion text', () => {
+    expect(content).toContain('second opinion from a different AI model');
+  });
+
+  test('contains cross-model synthesis instructions', () => {
+    expect(content).toMatch(/[Ss]ynthesis/);
+    expect(content).toContain('Where Claude agrees with Codex');
+  });
+
+  test('contains premise revision check', () => {
+    expect(content).toContain('Codex challenged premise');
+  });
+
+  test('contains error handling for auth, timeout, and empty', () => {
+    expect(content).toMatch(/[Aa]uth.*fail/);
+    expect(content).toMatch(/[Tt]imeout/);
+    expect(content).toMatch(/[Ee]mpty response/);
+  });
+
+  test('Codex host variant does NOT contain the Phase 3.5 resolver output', () => {
+    // The resolver returns '' for codex host, so the interactive section is stripped.
+    // Static template references to "Phase 3.5" in prose/conditionals are fine.
+    // Other resolvers (design review lite) may contain CODEX_NOT_AVAILABLE, so we
+    // check for Phase 3.5-specific markers only.
+    expect(codexContent).not.toContain('Phase 3.5: Cross-Model Second Opinion');
+    expect(codexContent).not.toContain('TMPERR_OH');
+    expect(codexContent).not.toContain('gstack-codex-oh-');
+  });
+});
+
 // --- {{BENEFITS_FROM}} resolver tests ---
 
 describe('BENEFITS_FROM resolver', () => {
