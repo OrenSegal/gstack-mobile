@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.11.2.0] - 2026-03-22 — Codex Just Works
+
+### Fixed
+
+- **Codex no longer shows "exceeds maximum length of 1024 characters" on startup.** Skill descriptions compressed from ~1,200 words to ~280 words — well under the limit. Every skill now has a test enforcing the cap.
+- **No more duplicate skill discovery.** Codex used to find both source SKILL.md files and generated Codex skills, showing every skill twice. Setup now creates a minimal runtime root at `~/.codex/skills/gstack` with only the assets Codex needs — no source files exposed.
+- **Old direct installs auto-migrate.** If you previously cloned gstack into `~/.codex/skills/gstack`, setup detects this and moves it to `~/.gstack/repos/gstack` so skills aren't discovered from the source checkout.
+- **Sidecar directory no longer linked as a skill.** The `.agents/skills/gstack` runtime asset directory was incorrectly symlinked alongside real skills — now skipped.
+
+### Added
+
+- **Repo-local Codex installs.** Clone gstack into `.agents/skills/gstack` inside any repo and run `./setup --host codex` — skills install next to the checkout, no global `~/.codex/` needed. Generated preambles auto-detect whether to use repo-local or global paths at runtime.
+- **Kiro CLI support.** `./setup --host kiro` installs skills for the Kiro agent platform, rewriting paths and symlinking runtime assets. Auto-detected by `--host auto` if `kiro-cli` is installed.
+- **`.agents/` is now gitignored.** Generated Codex skill files are no longer committed — they're created at setup time from templates. Removes 14,000+ lines of generated output from the repo.
+
+### Changed
+
+- **`GSTACK_DIR` renamed to `SOURCE_GSTACK_DIR` / `INSTALL_GSTACK_DIR`** throughout the setup script for clarity about which path points to the source repo vs the install location.
+- **CI validates Codex generation succeeds** instead of checking committed file freshness (since `.agents/` is no longer committed).
+
 ## [0.11.1.1] - 2026-03-22 — Plan Files Always Show Review Status
 
 ### Added

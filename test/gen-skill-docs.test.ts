@@ -5,6 +5,39 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const ROOT = path.resolve(import.meta.dir, '..');
+const MAX_SKILL_DESCRIPTION_LENGTH = 1024;
+
+function extractDescription(content: string): string {
+  const fmEnd = content.indexOf('\n---', 4);
+  expect(fmEnd).toBeGreaterThan(0);
+  const frontmatter = content.slice(4, fmEnd);
+  const lines = frontmatter.split('\n');
+  let description = '';
+  let inDescription = false;
+  const descLines: string[] = [];
+
+  for (const line of lines) {
+    if (line.match(/^description:\s*\|?\s*$/)) {
+      inDescription = true;
+      continue;
+    }
+    if (line.match(/^description:\s*\S/)) {
+      return line.replace(/^description:\s*/, '').trim();
+    }
+    if (inDescription) {
+      if (line === '' || line.match(/^\s/)) {
+        descLines.push(line.replace(/^  /, ''));
+      } else {
+        break;
+      }
+    }
+  }
+
+  if (descLines.length > 0) {
+    description = descLines.join('\n').trim();
+  }
+  return description;
+}
 
 // Dynamic template discovery — matches the generator's findTemplates() behavior.
 // New skills automatically get test coverage without updating a static list.
@@ -95,6 +128,14 @@ describe('gen-skill-docs', () => {
       expect(content.startsWith('---\n')).toBe(true);
       expect(content).toContain('name:');
       expect(content).toContain('description:');
+    }
+  });
+
+  test(`every generated SKILL.md description stays within ${MAX_SKILL_DESCRIPTION_LENGTH} chars`, () => {
+    for (const skill of ALL_SKILLS) {
+      const content = fs.readFileSync(path.join(ROOT, skill.dir, 'SKILL.md'), 'utf-8');
+      const description = extractDescription(content);
+      expect(description.length).toBeLessThanOrEqual(MAX_SKILL_DESCRIPTION_LENGTH);
     }
   });
 
@@ -841,11 +882,14 @@ describe('Codex generation (--host codex)', () => {
     }
   });
 
-  test('Codex preamble uses codex paths', () => {
+  test('Codex preamble resolves runtime assets from repo-local or global gstack roots', () => {
     // Check a skill that has a preamble (review is a good candidate)
     const content = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-review', 'SKILL.md'), 'utf-8');
-    expect(content).toContain('~/.codex/skills/gstack');
-    expect(content).toContain('.agents/skills/gstack');
+    expect(content).toContain('GSTACK_ROOT');
+    expect(content).toContain('$_ROOT/.agents/skills/gstack');
+    expect(content).toContain('$GSTACK_BIN/gstack-config');
+    expect(content).toContain('$GSTACK_ROOT/gstack-upgrade/SKILL.md');
+    expect(content).not.toContain('~/.codex/skills/gstack/bin/gstack-config get telemetry');
   });
 
   // ─── Path rewriting regression tests ─────────────────────────
@@ -883,9 +927,9 @@ describe('Codex generation (--host codex)', () => {
     // Test each of the 4 path rewrite rules individually
     const content = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-review', 'SKILL.md'), 'utf-8');
 
-    // Rule 1: ~/.claude/skills/gstack → ~/.codex/skills/gstack
+    // Rule 1: ~/.claude/skills/gstack → $GSTACK_ROOT
     expect(content).not.toContain('~/.claude/skills/gstack');
-    expect(content).toContain('~/.codex/skills/gstack');
+    expect(content).toContain('$GSTACK_ROOT');
 
     // Rule 2: .claude/skills/gstack → .agents/skills/gstack
     expect(content).not.toContain('.claude/skills/gstack');
@@ -904,6 +948,9 @@ describe('Codex generation (--host codex)', () => {
       // No skill should reference Claude paths
       expect(content).not.toContain('~/.claude/skills');
       expect(content).not.toContain('.claude/skills');
+      if (content.includes('gstack-config') || content.includes('gstack-update-check') || content.includes('gstack-telemetry-log')) {
+        expect(content).toContain('$GSTACK_ROOT');
+      }
       // If a skill references checklist.md, it must use the correct sidecar path
       if (content.includes('checklist.md') && !content.includes('design-checklist.md')) {
         expect(content).not.toContain('gstack-review/checklist.md');
@@ -934,7 +981,10 @@ describe('Codex generation (--host codex)', () => {
     for (const skill of ALL_SKILLS) {
       const content = fs.readFileSync(path.join(ROOT, skill.dir, 'SKILL.md'), 'utf-8');
       expect(content).not.toContain('~/.codex/');
-      expect(content).not.toContain('.agents/skills');
+      // gstack-upgrade legitimately references .agents/skills for cross-platform detection
+      if (skill.dir !== 'gstack-upgrade') {
+        expect(content).not.toContain('.agents/skills');
+      }
     }
   });
 });
@@ -970,8 +1020,31 @@ describe('setup script validation', () => {
       setupContent.indexOf('# 5. Install for Codex'),
       setupContent.indexOf('# 6. Create')
     );
+    expect(codexSection).toContain('create_codex_runtime_root');
     expect(codexSection).toContain('link_codex_skill_dirs');
     expect(codexSection).not.toContain('link_claude_skill_dirs');
+    expect(codexSection).not.toContain('ln -snf "$GSTACK_DIR" "$CODEX_GSTACK"');
+  });
+
+  test('Codex install prefers repo-local .agents/skills when setup runs from there', () => {
+    expect(setupContent).toContain('SKILLS_PARENT_BASENAME');
+    expect(setupContent).toContain('CODEX_REPO_LOCAL=0');
+    expect(setupContent).toContain('[ "$SKILLS_PARENT_BASENAME" = ".agents" ]');
+    expect(setupContent).toContain('CODEX_REPO_LOCAL=1');
+    expect(setupContent).toContain('CODEX_SKILLS="$INSTALL_SKILLS_DIR"');
+  });
+
+  test('setup separates install path from source path for symlinked repo-local installs', () => {
+    expect(setupContent).toContain('INSTALL_GSTACK_DIR=');
+    expect(setupContent).toContain('SOURCE_GSTACK_DIR=');
+    expect(setupContent).toContain('INSTALL_SKILLS_DIR=');
+    expect(setupContent).toContain('CODEX_GSTACK="$INSTALL_GSTACK_DIR"');
+    expect(setupContent).toContain('link_codex_skill_dirs "$SOURCE_GSTACK_DIR" "$CODEX_SKILLS"');
+  });
+
+  test('Codex installs always create sidecar runtime assets for the real skill target', () => {
+    expect(setupContent).toContain('if [ "$INSTALL_CODEX" -eq 1 ]; then');
+    expect(setupContent).toContain('create_agents_sidecar "$SOURCE_GSTACK_DIR"');
   });
 
   test('link_codex_skill_dirs reads from .agents/skills/', () => {
@@ -991,14 +1064,40 @@ describe('setup script validation', () => {
     expect(fnBody).toContain('ln -snf "gstack/$skill_name"');
   });
 
-  test('setup supports --host auto|claude|codex', () => {
+  test('setup supports --host auto|claude|codex|kiro', () => {
     expect(setupContent).toContain('--host');
-    expect(setupContent).toContain('claude|codex|auto');
+    expect(setupContent).toContain('claude|codex|kiro|auto');
   });
 
-  test('auto mode detects claude and codex binaries', () => {
+  test('auto mode detects claude, codex, and kiro binaries', () => {
     expect(setupContent).toContain('command -v claude');
     expect(setupContent).toContain('command -v codex');
+    expect(setupContent).toContain('command -v kiro-cli');
+  });
+
+  // T1: Sidecar skip guard — prevents .agents/skills/gstack from being linked as a skill
+  test('link_codex_skill_dirs skips the gstack sidecar directory', () => {
+    const fnStart = setupContent.indexOf('link_codex_skill_dirs()');
+    const fnEnd = setupContent.indexOf('}', setupContent.indexOf('done', fnStart));
+    const fnBody = setupContent.slice(fnStart, fnEnd);
+    expect(fnBody).toContain('[ "$skill_name" = "gstack" ] && continue');
+  });
+
+  // T2: Dynamic $GSTACK_ROOT paths in generated Codex preambles
+  test('generated Codex preambles use dynamic GSTACK_ROOT paths', () => {
+    const codexSkillDir = path.join(ROOT, '.agents', 'skills', 'gstack-ship');
+    if (!fs.existsSync(codexSkillDir)) return; // skip if .agents/ not generated
+    const content = fs.readFileSync(path.join(codexSkillDir, 'SKILL.md'), 'utf-8');
+    expect(content).toContain('GSTACK_ROOT=');
+    expect(content).toContain('$GSTACK_BIN/');
+  });
+
+  // T3: Kiro host support in setup script
+  test('setup supports --host kiro with install section and sed rewrites', () => {
+    expect(setupContent).toContain('INSTALL_KIRO=');
+    expect(setupContent).toContain('kiro-cli');
+    expect(setupContent).toContain('KIRO_SKILLS=');
+    expect(setupContent).toContain('~/.kiro/skills/gstack');
   });
 
   test('create_agents_sidecar links runtime assets', () => {
@@ -1010,6 +1109,28 @@ describe('setup script validation', () => {
     expect(fnBody).toContain('browse');
     expect(fnBody).toContain('review');
     expect(fnBody).toContain('qa');
+  });
+
+  test('create_codex_runtime_root exposes only runtime assets', () => {
+    const fnStart = setupContent.indexOf('create_codex_runtime_root()');
+    const fnEnd = setupContent.indexOf('}', setupContent.indexOf('done', setupContent.indexOf('review/', fnStart)));
+    const fnBody = setupContent.slice(fnStart, fnEnd);
+    expect(fnBody).toContain('gstack/SKILL.md');
+    expect(fnBody).toContain('browse/dist');
+    expect(fnBody).toContain('browse/bin');
+    expect(fnBody).toContain('gstack-upgrade/SKILL.md');
+    // Review runtime assets (individual files, not the whole dir)
+    expect(fnBody).toContain('checklist.md');
+    expect(fnBody).toContain('design-checklist.md');
+    expect(fnBody).toContain('greptile-triage.md');
+    expect(fnBody).toContain('TODOS-format.md');
+    expect(fnBody).not.toContain('ln -snf "$gstack_dir" "$codex_gstack"');
+  });
+
+  test('direct Codex installs are migrated out of ~/.codex/skills/gstack', () => {
+    expect(setupContent).toContain('migrate_direct_codex_install');
+    expect(setupContent).toContain('$HOME/.gstack/repos/gstack');
+    expect(setupContent).toContain('avoid duplicate skill discovery');
   });
 });
 

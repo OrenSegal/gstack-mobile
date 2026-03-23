@@ -45,10 +45,10 @@ const HOST_PATHS: Record<Host, HostPaths> = {
     browseDir: '~/.claude/skills/gstack/browse/dist',
   },
   codex: {
-    skillRoot: '~/.codex/skills/gstack',
+    skillRoot: '$GSTACK_ROOT',
     localSkillRoot: '.agents/skills/gstack',
-    binDir: '~/.codex/skills/gstack/bin',
-    browseDir: '~/.codex/skills/gstack/browse/dist',
+    binDir: '$GSTACK_BIN',
+    browseDir: '$GSTACK_BROWSE',
   },
 };
 
@@ -138,10 +138,19 @@ function generateSnapshotFlags(_ctx: TemplateContext): string {
 }
 
 function generatePreambleBash(ctx: TemplateContext): string {
+  const runtimeRoot = ctx.host === 'codex'
+    ? `_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+GSTACK_ROOT="$HOME/.codex/skills/gstack"
+[ -n "$_ROOT" ] && [ -d "$_ROOT/.agents/skills/gstack" ] && GSTACK_ROOT="$_ROOT/.agents/skills/gstack"
+GSTACK_BIN="$GSTACK_ROOT/bin"
+GSTACK_BROWSE="$GSTACK_ROOT/browse/dist"
+`
+    : '';
+
   return `## Preamble (run first)
 
 \`\`\`bash
-_UPD=$(${ctx.paths.binDir}/gstack-update-check 2>/dev/null || ${ctx.paths.localSkillRoot}/bin/gstack-update-check 2>/dev/null || true)
+${runtimeRoot}_UPD=$(${ctx.paths.binDir}/gstack-update-check 2>/dev/null || ${ctx.paths.localSkillRoot}/bin/gstack-update-check 2>/dev/null || true)
 [ -n "$_UPD" ] && echo "$_UPD" || true
 mkdir -p ~/.gstack/sessions
 touch ~/.gstack/sessions/"$PPID"
@@ -157,7 +166,7 @@ REPO_MODE=\${REPO_MODE:-unknown}
 echo "REPO_MODE: $REPO_MODE"
 _LAKE_SEEN=$([ -f ~/.gstack/.completeness-intro-seen ] && echo "yes" || echo "no")
 echo "LAKE_INTRO: $_LAKE_SEEN"
-_TEL=$(~/.claude/skills/gstack/bin/gstack-config get telemetry 2>/dev/null || true)
+_TEL=$(${ctx.paths.binDir}/gstack-config get telemetry 2>/dev/null || true)
 _TEL_PROMPTED=$([ -f ~/.gstack/.telemetry-prompted ] && echo "yes" || echo "no")
 _TEL_START=$(date +%s)
 _SESSION_ID="$$-$(date +%s)"
@@ -2071,7 +2080,7 @@ TMPERR_ADV=$(mktemp /tmp/codex-adv-XXXXXXXX)
 codex exec "Review the changes on this branch against the base branch. Run git diff origin/<base> to see the diff. Your job is to find ways this code will fail in production. Think like an attacker and a chaos engineer. Find edge cases, race conditions, security holes, resource leaks, failure modes, and silent data corruption paths. Be adversarial. Be thorough. No compliments — just the problems." -s read-only -c 'model_reasoning_effort="xhigh"' --enable web_search_cached 2>"$TMPERR_ADV"
 \`\`\`
 
-Use a 5-minute timeout (\`timeout: 300000\`). After the command completes, read stderr:
+Set the Bash tool's \`timeout\` parameter to \`300000\` (5 minutes). Do NOT use the \`timeout\` shell command — it doesn't exist on macOS. After the command completes, read stderr:
 \`\`\`bash
 cat "$TMPERR_ADV"
 \`\`\`
@@ -2116,7 +2125,7 @@ TMPERR=$(mktemp /tmp/codex-review-XXXXXXXX)
 codex review --base <base> -c 'model_reasoning_effort="xhigh"' --enable web_search_cached 2>"$TMPERR"
 \`\`\`
 
-Use a 5-minute timeout. Present output under \`CODEX SAYS (code review):\` header.
+Set the Bash tool's \`timeout\` parameter to \`300000\` (5 minutes). Do NOT use the \`timeout\` shell command — it doesn't exist on macOS. Present output under \`CODEX SAYS (code review):\` header.
 Check for \`[P1]\` markers: found → \`GATE: FAIL\`, not found → \`GATE: PASS\`.
 
 If GATE is FAIL, use AskUserQuestion:
