@@ -2910,6 +2910,15 @@ function transformFrontmatter(content: string, host: Host): string {
   const body = content.slice(fmEnd + 4); // includes the leading \n after ---
   const { name, description } = extractNameAndDescription(content);
 
+  // Codex 1024-char description limit — fail build, don't ship broken skills
+  const MAX_DESC = 1024;
+  if (description.length > MAX_DESC) {
+    throw new Error(
+      `Codex description for "${name}" is ${description.length} chars (max ${MAX_DESC}). ` +
+      `Compress the description in the .tmpl file.`
+    );
+  }
+
   // Re-emit Codex frontmatter (name + description only)
   const indentedDesc = description.split('\n').map(l => `  ${l}`).join('\n');
   const codexFm = `---\nname: ${name}\ndescription: |\n${indentedDesc}\n---`;

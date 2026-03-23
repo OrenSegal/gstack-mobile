@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.11.9.0] - 2026-03-23 — Codex Skill Loading Fix
+
+### Fixed
+
+- **Codex no longer rejects gstack skills with "invalid SKILL.md".** Existing installs had oversized description fields (>1024 chars) that Codex silently rejected. The build now errors if any Codex description exceeds 1024 chars, setup always regenerates `.agents/` to prevent stale files, and a one-time migration auto-cleans oversized descriptions on existing installs.
+- **`package.json` version now stays in sync with `VERSION`.** Was 6 minor versions behind. A new CI test catches future drift.
+
+### Added
+
+- **Codex E2E tests now assert no skill loading errors.** The exact "Skipped loading skill(s)" error that prompted this fix is now a regression test — `stderr` is captured and checked.
+- **Codex troubleshooting entry in README.** Manual fix instructions for users who hit the loading error before the auto-migration runs.
+
+### For contributors
+
+- `test/gen-skill-docs.test.ts` validates all `.agents/` descriptions stay within 1024 chars
+- `gstack-update-check` includes a one-time migration that deletes oversized Codex SKILL.md files
+- P1 TODO added: Codex→Claude reverse buddy check skill
+
 ## [0.11.8.0] - 2026-03-23 — zsh Compatibility Fix
 
 ### Fixed
