@@ -731,6 +731,35 @@ Reference the wireframe screenshot in the design doc's "Recommended Approach" se
 The screenshot file at `/tmp/gstack-sketch.png` can be referenced by downstream skills
 (`/plan-design-review`, `/design-review`) to see what was originally envisioned.
 
+**Step 6: Outside design voices** (optional)
+
+After the wireframe is approved, offer outside design perspectives:
+
+```bash
+which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+```
+
+If Codex is available, use AskUserQuestion:
+> "Want outside design perspectives on the chosen approach? Codex proposes a visual thesis, content plan, and interaction ideas. A Claude subagent proposes an alternative aesthetic direction."
+>
+> A) Yes — get outside design voices
+> B) No — proceed without
+
+If user chooses A, launch both voices simultaneously:
+
+1. **Codex** (via Bash, `model_reasoning_effort="medium"`):
+```bash
+TMPERR_SKETCH=$(mktemp /tmp/codex-sketch-XXXXXXXX)
+codex exec "For this product approach, provide: a visual thesis (one sentence — mood, material, energy), a content plan (hero → support → detail → CTA), and 2 interaction ideas that change page feel. Apply beautiful defaults: composition-first, brand-first, cardless, poster not document. Be opinionated." -s read-only -c 'model_reasoning_effort="medium"' --enable web_search_cached 2>"$TMPERR_SKETCH"
+```
+Use a 5-minute timeout (`timeout: 300000`). After completion: `cat "$TMPERR_SKETCH" && rm -f "$TMPERR_SKETCH"`
+
+2. **Claude subagent** (via Agent tool):
+"For this product approach, what design direction would you recommend? What aesthetic, typography, and interaction patterns fit? What would make this approach feel inevitable to the user? Be specific — font names, hex colors, spacing values."
+
+Present Codex output under `CODEX SAYS (design sketch):` and subagent output under `CLAUDE SUBAGENT (design direction):`.
+Error handling: all non-blocking. On failure, skip and continue.
+
 ---
 
 ## Phase 4.5: Founder Signal Synthesis
