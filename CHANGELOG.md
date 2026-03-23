@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.11.8.0] - 2026-03-23 — zsh Compatibility Fix
+
+### Fixed
+
+- **gstack skills now work in zsh without errors.** Every skill preamble used a `.pending-*` glob pattern that triggered zsh's "no matches found" error on every invocation (the common case where no pending telemetry files exist). Replaced shell glob with `find` to avoid zsh's NOMATCH behavior entirely. Thanks to @hnshah for the initial report and fix in PR #332. Fixes #313.
+
+### Added
+
+- **Regression test for zsh glob safety.** New test verifies all generated SKILL.md files use `find` instead of bare shell globs for `.pending-*` pattern matching.
+
 ## [0.11.7.0] - 2026-03-23 — /review → /ship Handoff Fix
 
 ### Fixed
