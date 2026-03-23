@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.5.1] - 2026-03-23 — Inline Office Hours
+
+### Changed
+
+- **No more "open another window" for /office-hours.** When `/plan-ceo-review` or `/plan-eng-review` offer to run `/office-hours` first, it now runs inline in the same conversation. The review picks up right where it left off after the design doc is ready. Same for mid-session detection when you're still figuring out what to build.
+- **Handoff note infrastructure removed.** The handoff notes that bridged the old "go to another window" flow are no longer written. Existing notes from prior sessions are still read for backward compatibility.
+
 ## [0.11.5.0] - 2026-03-23 — Bash Compatibility Fix
 
 ### Fixed

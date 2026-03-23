@@ -773,6 +773,16 @@ describe('BENEFITS_FROM resolver', () => {
     const qaContent = fs.readFileSync(path.join(ROOT, 'qa', 'SKILL.md'), 'utf-8');
     expect(qaContent).not.toContain('Prerequisite Skill Offer');
   });
+
+  test('inline invocation — no "another window" language', () => {
+    expect(ceoContent).not.toContain('another window');
+    expect(engContent).not.toContain('another window');
+  });
+
+  test('inline invocation — read-and-follow path present', () => {
+    expect(ceoContent).toContain('office-hours/SKILL.md');
+    expect(engContent).toContain('office-hours/SKILL.md');
+  });
 });
 
 // --- {{DESIGN_OUTSIDE_VOICES}} resolver tests ---
