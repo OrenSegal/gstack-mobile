@@ -584,6 +584,20 @@ describe('PLAN_FILE_REVIEW_REPORT resolver', () => {
   });
 });
 
+// --- Plan status footer in preamble ---
+
+describe('Plan status footer in preamble', () => {
+  test('preamble contains plan status footer', () => {
+    // Read any skill that uses PREAMBLE
+    const content = fs.readFileSync(path.join(ROOT, 'office-hours', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('Plan Status Footer');
+    expect(content).toContain('GSTACK REVIEW REPORT');
+    expect(content).toContain('gstack-review-read');
+    expect(content).toContain('ExitPlanMode');
+    expect(content).toContain('NO REVIEWS YET');
+  });
+});
+
 // --- {{SPEC_REVIEW_LOOP}} resolver tests ---
 
 describe('SPEC_REVIEW_LOOP resolver', () => {

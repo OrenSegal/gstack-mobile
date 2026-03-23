@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.11.1.1] - 2026-03-22 — Plan Files Always Show Review Status
+
+### Added
+
+- **Every plan file now shows review status.** When you exit plan mode, the plan file automatically gets a `GSTACK REVIEW REPORT` section — even if you haven't run any formal reviews yet. Previously, this section only appeared after running `/plan-eng-review`, `/plan-ceo-review`, `/plan-design-review`, or `/codex review`. Now you always know where you stand: which reviews have run, which haven't, and what to do next.
+
 ## [0.11.1.0] - 2026-03-22 — Global Retro: Cross-Project AI Coding Retrospective
 
 ### Added
