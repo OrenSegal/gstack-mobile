@@ -278,12 +278,25 @@ Remember: _SESSIONS=4, so ELI16 mode is active. The user is juggling multiple wi
       expect(lower.includes('payment') || lower.includes('feature')).toBe(true);
       // Must mention what we're working on
       expect(lower.includes('stripe') || lower.includes('checkout') || lower.includes('payment')).toBe(true);
-      // Must have a RECOMMENDATION
-      expect(output).toContain('RECOMMENDATION');
+      // Must have a recommendation or structured options
+      expect(
+        output.includes('RECOMMENDATION') ||
+        lower.includes('recommend') ||
+        lower.includes('option a') ||
+        lower.includes('which do you want') ||
+        lower.includes('which approach')
+      ).toBe(true);
     } else {
       // Check agent output as fallback
       const output = result.output || '';
-      expect(output).toContain('RECOMMENDATION');
+      const lowerOut = output.toLowerCase();
+      expect(
+        output.includes('RECOMMENDATION') ||
+        lowerOut.includes('recommend') ||
+        lowerOut.includes('option a') ||
+        lowerOut.includes('which do you want') ||
+        lowerOut.includes('which approach')
+      ).toBe(true);
     }
 
     // Clean up

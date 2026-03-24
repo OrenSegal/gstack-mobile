@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.11.13.0] - 2026-03-24 — Worktree Isolation + Infrastructure Elegance
+
+### Added
+
+- **E2E tests now run in git worktrees.** Gemini and Codex tests no longer pollute your working tree. Each test suite gets an isolated worktree, and useful changes the AI agent makes are automatically harvested as patches you can cherry-pick. Run `git apply ~/.gstack-dev/harvests/<id>/gemini.patch` to grab improvements.
+- **Harvest deduplication.** If a test keeps producing the same improvement across runs, it's detected via SHA-256 hash and skipped — no duplicate patches piling up.
+- **`describeWithWorktree()` helper.** Any E2E test can now opt into worktree isolation with a one-line wrapper. Future tests that need real repo context (git history, real diff) can use this instead of tmpdirs.
+
+### Changed
+
+- **Gen-skill-docs is now a modular resolver pipeline.** The monolithic 1700-line generator is split into 8 focused resolver modules (browse, preamble, design, review, testing, utility, constants, codex-helpers). Adding a new placeholder resolver is now a single file instead of editing a megafunction.
+- **Eval results are project-scoped.** Results now live in `~/.gstack/projects/$SLUG/evals/` instead of the global `~/.gstack-dev/evals/`. Multi-project users no longer get eval results mixed together.
+
+### For contributors
+
+- WorktreeManager (`lib/worktree.ts`) is a reusable platform module — future skills like `/batch` can import it directly.
+- 12 new unit tests for WorktreeManager covering lifecycle, harvest, dedup, and error handling.
+- `GLOBAL_TOUCHFILES` updated so worktree infrastructure changes trigger all E2E tests.
+
 ## [0.11.12.0] - 2026-03-24 — Triple-Voice Autoplan
 
 Every `/autoplan` phase now gets two independent second opinions — one from Codex (OpenAI's frontier model) and one from a fresh Claude subagent. Three AI reviewers looking at your plan from different angles, each phase building on the last.
