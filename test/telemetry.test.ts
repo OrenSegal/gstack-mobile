@@ -78,8 +78,8 @@ describe('gstack-telemetry-log', () => {
 
     const events = parseJsonl();
     expect(events).toHaveLength(1);
-    // installation_id should be a SHA-256 hash (64 hex chars)
-    expect(events[0].installation_id).toMatch(/^[a-f0-9]{64}$/);
+    // installation_id should be a UUID v4 (or hex fallback)
+    expect(events[0].installation_id).toMatch(/^[a-f0-9-]{32,36}$/);
   });
 
   test('installation_id is null for anonymous tier', () => {

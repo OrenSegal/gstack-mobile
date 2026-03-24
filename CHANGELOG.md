@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.16.1] - 2026-03-24 — Installation ID Privacy Fix
+
+### Fixed
+
+- **Installation IDs are now random UUIDs instead of hostname hashes.** The old `SHA-256(hostname+username)` approach meant anyone who knew your machine identity could compute your installation ID. Now uses a random UUID stored in `~/.gstack/installation-id` — not derivable from any public input, rotatable by deleting the file.
+- **RLS verification script handles edge cases.** `verify-rls.sh` now correctly treats INSERT success as expected (kept for old client compat), handles 409 conflicts and 204 no-ops.
+
 ## [0.11.16.0] - 2026-03-24 — Telemetry Security Hardening
 
 ### Fixed
