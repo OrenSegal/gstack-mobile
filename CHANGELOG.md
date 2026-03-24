@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.11.16.0] - 2026-03-24 — Telemetry Security Hardening
+
+### Fixed
+
+- **Telemetry RLS policies tightened.** Row-level security policies on all telemetry tables now deny direct access via the anon key. All reads and writes go through validated edge functions with schema checks, event type allowlists, and field length limits.
+- **Community dashboard is faster and server-cached.** Dashboard stats are now served from a single edge function with 1-hour server-side caching, replacing multiple direct queries.
+
+### Changed
+
+- **Telemetry sync uses `GSTACK_SUPABASE_URL` instead of `GSTACK_TELEMETRY_ENDPOINT`.** Edge functions need the base URL, not the REST API path. The old variable is removed from `config.sh`.
+- **Cursor advancement is now safe.** The sync script checks the edge function's `inserted` count before advancing — if zero events were inserted, the cursor holds and retries next run.
+
+### For contributors
+
+- New migration: `supabase/migrations/002_tighten_rls.sql`
+- New smoke test: `supabase/verify-rls.sh` (9 checks: 5 reads + 4 writes)
+- Extended `test/telemetry.test.ts` with field name verification
+- Untracked `browse/dist/` binaries from git (arm64-only, rebuilt by `./setup`)
+
 ## [0.11.15.0] - 2026-03-24 — E2E Test Coverage for Plan Reviews & Codex
 
 ### Added
