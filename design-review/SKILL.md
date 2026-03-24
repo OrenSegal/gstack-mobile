@@ -2,6 +2,7 @@
 name: design-review
 version: 2.0.0
 description: |
+  MANUAL TRIGGER ONLY: invoke only when user types /design-review.
   Designer's eye QA: finds visual inconsistency, spacing issues, hierarchy problems,
   AI slop patterns, and slow interactions — then fixes them. Iteratively fixes issues
   in source code, committing each fix atomically and re-verifying with before/after

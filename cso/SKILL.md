@@ -2,6 +2,7 @@
 name: cso
 version: 2.0.0
 description: |
+  MANUAL TRIGGER ONLY: invoke only when user types /cso.
   Chief Security Officer mode. Infrastructure-first security audit: secrets archaeology,
   dependency supply chain, CI/CD pipeline security, LLM/AI security, skill supply chain
   scanning, plus OWASP Top 10, STRIDE threat modeling, and active verification.

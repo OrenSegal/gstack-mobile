@@ -2,6 +2,7 @@
 name: land-and-deploy
 version: 1.0.0
 description: |
+  MANUAL TRIGGER ONLY: invoke only when user types /land-and-deploy.
   Land and deploy workflow. Merges the PR, waits for CI and deploy,
   verifies production health via canary checks. Takes over after /ship
   creates the PR. Use when: "merge", "land", "deploy", "merge and verify",

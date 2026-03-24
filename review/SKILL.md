@@ -2,6 +2,7 @@
 name: review
 version: 1.0.0
 description: |
+  MANUAL TRIGGER ONLY: invoke only when user types /review.
   Pre-landing PR review. Analyzes diff against the base branch for SQL safety, LLM trust
   boundary violations, conditional side effects, and other structural issues. Use when
   asked to "review this PR", "code review", "pre-landing review", or "check my diff".
@@ -337,7 +338,7 @@ Before reviewing code quality, check: **did they build what was requested — no
    Read commit messages (`git log origin/<base>..HEAD --oneline`).
    **If no PR exists:** rely on commit messages and TODOS.md for stated intent — this is the common case since /review runs before /ship creates the PR.
 2. Identify the **stated intent** — what was this branch supposed to accomplish?
-3. Run `git diff origin/<base> --stat` and compare the files changed against the stated intent.
+3. Run `git diff origin/<base>...HEAD --stat` and compare the files changed against the stated intent.
 4. Evaluate with skepticism:
 
    **SCOPE CREEP detection:**

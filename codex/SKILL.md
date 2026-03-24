@@ -2,6 +2,7 @@
 name: codex
 version: 1.0.0
 description: |
+  MANUAL TRIGGER ONLY: invoke only when user types /codex.
   OpenAI Codex CLI wrapper — three modes. Code review: independent diff review via
   codex review with pass/fail gate. Challenge: adversarial mode that tries to break
   your code. Consult: ask codex anything with session continuity for follow-ups.

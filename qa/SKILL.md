@@ -2,6 +2,7 @@
 name: qa
 version: 2.0.0
 description: |
+  MANUAL TRIGGER ONLY: invoke only when user types /qa.
   Systematically QA test a web application and fix bugs found. Runs QA testing,
   then iteratively fixes bugs in source code, committing each fix atomically and
   re-verifying. Use when asked to "qa", "QA", "test this site", "find bugs",

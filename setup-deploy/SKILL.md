@@ -2,6 +2,7 @@
 name: setup-deploy
 version: 1.0.0
 description: |
+  MANUAL TRIGGER ONLY: invoke only when user types /setup-deploy.
   Configure deployment settings for /land-and-deploy. Detects your deploy
   platform (Fly.io, Render, Vercel, Netlify, Heroku, GitHub Actions, custom),
   production URL, health check endpoints, and deploy status commands. Writes

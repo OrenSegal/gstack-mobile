@@ -2,6 +2,7 @@
 name: qa-only
 version: 1.0.0
 description: |
+  MANUAL TRIGGER ONLY: invoke only when user types /qa-only.
   Report-only QA testing. Systematically tests a web application and produces a
   structured report with health score, screenshots, and repro steps — but never
   fixes anything. Use when asked to "just report bugs", "qa report only", or

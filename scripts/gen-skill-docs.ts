@@ -11,6 +11,7 @@
 
 import { COMMAND_DESCRIPTIONS } from '../browse/src/commands';
 import { SNAPSHOT_FLAGS } from '../browse/src/snapshot';
+import { discoverTemplates } from './discover-skills';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -3002,6 +3003,17 @@ function processTemplate(tmplPath: string, host: Host = 'claude'): { outputPath:
     throw new Error(`Unresolved placeholders in ${relTmplPath}: ${remaining.join(', ')}`);
   }
 
+  // Inject auto-trigger guard into skill descriptions.
+  // Adds explicit trigger criteria so Claude Code doesn't auto-fire skills
+  // based on semantic similarity. Preserves existing "Use when" and
+  // "Proactively suggest" text (both are tested in skill-validation.test.ts).
+  const triggerGuard = `  MANUAL TRIGGER ONLY: invoke only when user types /${skillName}.\n`;
+  const descMatch = content.match(/^(description:\s*\|?\s*\n)/m);
+  if (descMatch && descMatch.index !== undefined) {
+    const insertAt = descMatch.index + descMatch[0].length;
+    content = content.slice(0, insertAt) + triggerGuard + content.slice(insertAt);
+  }
+
   // For codex host: transform frontmatter and replace Claude-specific paths
   if (host === 'codex') {
     // Extract hook safety prose BEFORE transforming frontmatter (which strips hooks)
@@ -3048,16 +3060,7 @@ function processTemplate(tmplPath: string, host: Host = 'claude'): { outputPath:
 // ─── Main ───────────────────────────────────────────────────
 
 function findTemplates(): string[] {
-  const templates: string[] = [];
-  const rootTmpl = path.join(ROOT, 'SKILL.md.tmpl');
-  if (fs.existsSync(rootTmpl)) templates.push(rootTmpl);
-
-  for (const entry of fs.readdirSync(ROOT, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-    const tmpl = path.join(ROOT, entry.name, 'SKILL.md.tmpl');
-    if (fs.existsSync(tmpl)) templates.push(tmpl);
-  }
-  return templates;
+  return discoverTemplates(ROOT).map(t => path.join(ROOT, t.tmpl));
 }
 
 let hasChanges = false;
