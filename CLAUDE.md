@@ -29,7 +29,7 @@ against the previous run.
 **Diff-based test selection:** `test:evals` and `test:e2e` auto-select tests based
 on `git diff` against the base branch. Each test declares its file dependencies in
 `test/helpers/touchfiles.ts`. Changes to global touchfiles (session-runner, eval-store,
-llm-judge, gen-skill-docs) trigger all tests. Use `EVALS_ALL=1` or the `:all` script
+llm-judge, gen-skill-docs, touchfiles) trigger all tests. Use `EVALS_ALL=1` or the `:all` script
 variants to force all tests. Run `eval:select` to preview which tests would run.
 
 ## Testing
