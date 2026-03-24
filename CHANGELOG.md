@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.11.12.0] - 2026-03-24 — Triple-Voice Autoplan
+
+Every `/autoplan` phase now gets two independent second opinions — one from Codex (OpenAI's frontier model) and one from a fresh Claude subagent. Three AI reviewers looking at your plan from different angles, each phase building on the last.
+
+### Added
+
+- **Dual voices in every autoplan phase.** CEO review, Design review, and Eng review each run both a Codex challenge and an independent Claude subagent simultaneously. You get a consensus table showing where the models agree and disagree — disagreements surface as taste decisions at the final gate.
+- **Phase-cascading context.** Codex gets prior-phase findings as context (CEO concerns inform Design review, CEO+Design inform Eng). Claude subagent stays truly independent for genuine cross-model validation.
+- **Structured consensus tables.** CEO phase scores 6 strategic dimensions, Design uses the litmus scorecard, Eng scores 6 architecture dimensions. CONFIRMED/DISAGREE for each.
+- **Cross-phase synthesis.** Phase 4 gate highlights themes that appeared independently in multiple phases — high-confidence signals when different reviewers catch the same issue.
+- **Sequential enforcement.** STOP markers between phases + pre-phase checklists prevent autoplan from accidentally parallelizing CEO/Design/Eng (each phase depends on the previous).
+- **Phase-transition summaries.** Brief status at each phase boundary so you can track progress without waiting for the full pipeline.
+- **Degradation matrix.** When Codex or the Claude subagent fails, autoplan gracefully degrades with clear labels (`[codex-only]`, `[subagent-only]`, `[single-reviewer mode]`).
+
 ## [0.11.11.0] - 2026-03-23 — Community Wave 3
 
 10 community PRs merged — bug fixes, platform support, and workflow improvements.
