@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.11.18.2] - 2026-03-24
+
+### Fixed
+
+- **Windows browse daemon fixed.** The browse server wouldn't start on Windows because Bun requires `stdio` as an array (`['ignore', 'ignore', 'ignore']`), not a string (`'ignore'`). Fixes #448, #454, #458.
+
 ## [0.11.18.1] - 2026-03-24
 
 ### Changed
