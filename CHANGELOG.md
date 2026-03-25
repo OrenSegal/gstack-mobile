@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.11.18.0] - 2026-03-24 — Ship With Teeth
+
+`/ship` and `/review` now actually enforce the quality gates they've been talking about. Coverage audit becomes a real gate (not just a diagram), plan completion gets verified against the diff, and verification steps from your plan run automatically.
+
+### Added
+
+- **Test coverage gate in /ship.** AI-assessed coverage below 60% is a hard stop. 60-79% gets a prompt. 80%+ passes. Thresholds are configurable per-project via `## Test Coverage` in CLAUDE.md.
+- **Coverage warning in /review.** Low coverage is now flagged prominently before you reach the /ship gate, so you can write tests early.
+- **Plan completion audit.** /ship reads your plan file, extracts every actionable item, cross-references against the diff, and shows you a DONE/NOT DONE/PARTIAL/CHANGED checklist. Missing items are a shipping blocker (with override).
+- **Plan-aware scope drift detection.** /review's scope drift check now reads the plan file too — not just TODOS.md and PR description.
+- **Auto-verification via /qa-only.** /ship reads your plan's verification section and runs /qa-only inline to test it — if a dev server is running on localhost. No server, no problem — it skips gracefully.
+- **Shared plan file discovery.** Conversation context first, content-based grep fallback second. Used by plan completion, plan review reports, and verification.
+- **Ship metrics logging.** Coverage %, plan completion ratio, and verification results are logged to review JSONL for /retro to track trends.
+- **Plan completion in /retro.** Weekly retros now show plan completion rates across shipped branches.
+
 ## [0.11.17.0] - 2026-03-24 — Cleaner Skill Descriptions + Proactive Opt-Out
 
 ### Changed
