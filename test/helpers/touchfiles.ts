@@ -188,6 +188,7 @@ export const E2E_TIERS: Record<string, 'gate' | 'periodic'> = {
   'review-design-lite': 'periodic',   // 4/7 threshold is subjective
   'review-coverage-audit': 'gate',
   'review-plan-completion': 'gate',
+  'review-dashboard-via': 'gate',
 
   // Office Hours
   'office-hours-spec-review': 'gate',
