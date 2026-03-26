@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.3.0] - 2026-03-26 — Voice Directive: Every Skill Sounds Like a Builder
+
+Every gstack skill now has a voice. Not a personality, not a persona, but a consistent set of instructions that make Claude sound like someone who shipped code today and cares whether the thing works for real users. Direct, concrete, sharp. Names the file, the function, the command. Connects technical work to what the user actually experiences.
+
+Two tiers: lightweight skills get a trimmed version (tone + writing rules). Full skills get the complete directive with context-dependent tone (YC partner energy for strategy, senior eng for code review, blog-post clarity for debugging), concreteness standards, humor calibration, and user-outcome guidance.
+
+### Added
+
+- **Voice directive in all 25 skills.** Generated from `preamble.ts`, injected via the template resolver. Tier 1 skills get a 4-line version. Tier 2+ skills get the full directive.
+- **Context-dependent tone.** Match the context: YC partner for `/plan-ceo-review`, senior eng for `/review`, best-technical-blog-post for `/investigate`.
+- **Concreteness standard.** "Show the exact command. Use real numbers. Point at the exact line." Not aspirational... enforced.
+- **User outcome connection.** "This matters because your user will see a 3-second spinner." Make the user's user real.
+- **LLM eval test.** Judge scores directness, concreteness, anti-corporate tone, AI vocabulary avoidance, and user outcome connection. All dimensions must score 4/5+.
+
 ## [0.12.2.0] - 2026-03-26 — Deploy with Confidence: First-Run Dry Run
 
 The first time you run `/land-and-deploy` on a project, it does a dry run. It detects your deploy infrastructure, tests that every command works, and shows you exactly what will happen... before it touches anything. You confirm, and from then on it just works.
