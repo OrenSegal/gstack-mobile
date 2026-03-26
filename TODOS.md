@@ -221,6 +221,18 @@ Linux cookie import shipped in v0.11.11.0 (Wave 3). Supports Chrome, Chromium, B
 **Priority:** P2
 **Depends on:** None (BASE_BRANCH_DETECT multi-platform resolver is already done)
 
+### Multi-commit CHANGELOG completeness eval
+
+**What:** Add a periodic E2E eval that creates a branch with 5+ commits spanning 3+ themes (features, cleanup, infra), runs /ship's Step 5 CHANGELOG generation, and verifies the CHANGELOG mentions all themes.
+
+**Why:** The bug fixed in v0.11.22 (garrytan/ship-full-commit-coverage) showed that /ship's CHANGELOG generation biased toward recent commits on long branches. The prompt fix adds a cross-check, but no test exercises the multi-commit failure mode. The existing `ship-local-workflow` E2E only uses a single-commit branch.
+
+**Context:** Would be a `periodic` tier test (~$4/run, non-deterministic since it tests LLM instruction-following). Setup: create bare remote, clone, add 5+ commits across different themes on a feature branch, run Step 5 via `claude -p`, verify CHANGELOG output covers all themes. Pattern: `ship-local-workflow` in `test/skill-e2e-workflow.test.ts`.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
+
 ### Ship log — persistent record of /ship runs
 
 **What:** Append structured JSON entry to `.gstack/ship-log.json` at end of every /ship run (version, date, branch, PR URL, review findings, Greptile stats, todos completed, test results).

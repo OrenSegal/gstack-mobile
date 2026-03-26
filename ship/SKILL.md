@@ -1590,10 +1590,26 @@ High-confidence findings (agreed on by multiple sources) should be prioritized f
 
 1. Read `CHANGELOG.md` header to know the format.
 
-2. Auto-generate the entry from **ALL commits on the branch** (not just recent ones):
-   - Use `git log <base>..HEAD --oneline` to see every commit being shipped
-   - Use `git diff <base>...HEAD` to see the full diff against the base branch
-   - The CHANGELOG entry must be comprehensive of ALL changes going into the PR
+2. **First, enumerate every commit on the branch:**
+   ```bash
+   git log <base>..HEAD --oneline
+   ```
+   Copy the full list. Count the commits. You will use this as a checklist.
+
+3. **Read the full diff** to understand what each commit actually changed:
+   ```bash
+   git diff <base>...HEAD
+   ```
+
+4. **Group commits by theme** before writing anything. Common themes:
+   - New features / capabilities
+   - Performance improvements
+   - Bug fixes
+   - Dead code removal / cleanup
+   - Infrastructure / tooling / tests
+   - Refactoring
+
+5. **Write the CHANGELOG entry** covering ALL groups:
    - If existing CHANGELOG entries on the branch already cover some commits, replace them with one unified entry for the new version
    - Categorize changes into applicable sections:
      - `### Added` — new features
@@ -1603,6 +1619,11 @@ High-confidence findings (agreed on by multiple sources) should be prioritized f
    - Write concise, descriptive bullet points
    - Insert after the file header (line 5), dated today
    - Format: `## [X.Y.Z.W] - YYYY-MM-DD`
+
+6. **Cross-check:** Compare your CHANGELOG entry against the commit list from step 2.
+   Every commit must map to at least one bullet point. If any commit is unrepresented,
+   add it now. If the branch has N commits spanning K themes, the CHANGELOG must
+   reflect all K themes.
 
 **Do NOT ask the user to describe changes.** Infer from the diff and commit history.
 
@@ -1741,7 +1762,12 @@ The PR/MR body should contain these sections:
 
 ```
 ## Summary
-<bullet points from CHANGELOG>
+<Summarize ALL changes being shipped. Run `git log <base>..HEAD --oneline` to enumerate
+every commit. Exclude the VERSION/CHANGELOG metadata commit (that's this PR's bookkeeping,
+not a substantive change). Group the remaining commits into logical sections (e.g.,
+"**Performance**", "**Dead Code Removal**", "**Infrastructure**"). Every substantive commit
+must appear in at least one section. If a commit's work isn't reflected in the summary,
+you missed it.>
 
 ## Test Coverage
 <coverage diagram from Step 3.4, or "All new code paths have test coverage.">
