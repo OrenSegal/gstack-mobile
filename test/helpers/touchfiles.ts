@@ -141,6 +141,10 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   'benchmark-workflow':            ['benchmark/**', 'browse/src/**'],
   'setup-deploy-workflow':         ['setup-deploy/**', 'scripts/gen-skill-docs.ts'],
 
+  // Sidebar agent
+  'sidebar-navigate':              ['browse/src/server.ts', 'browse/src/sidebar-agent.ts', 'browse/src/sidebar-utils.ts', 'extension/**'],
+  'sidebar-url-accuracy':          ['browse/src/server.ts', 'browse/src/sidebar-agent.ts', 'browse/src/sidebar-utils.ts', 'extension/background.js'],
+
   // Autoplan
   'autoplan-core':  ['autoplan/**', 'plan-ceo-review/**', 'plan-eng-review/**', 'plan-design-review/**'],
 
@@ -261,6 +265,10 @@ export const E2E_TIERS: Record<string, 'gate' | 'periodic'> = {
   'canary-workflow': 'gate',
   'benchmark-workflow': 'gate',
   'setup-deploy-workflow': 'gate',
+
+  // Sidebar agent
+  'sidebar-navigate': 'periodic',
+  'sidebar-url-accuracy': 'periodic',
 
   // Autoplan — periodic (not yet implemented)
   'autoplan-core': 'periodic',
