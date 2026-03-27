@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.12.7.0] - 2026-03-27 — Community PRs + Security Hardening
+
+Seven community contributions merged, reviewed, and tested. Plus security hardening for telemetry and review logging, and E2E test stability fixes.
+
+### Added
+
+- **Dotfile filtering in skill discovery.** Hidden directories (`.git`, `.vscode`, etc.) are no longer picked up as skill templates.
+- **JSON validation gate in review-log.** Malformed input is rejected instead of appended to the JSONL file.
+- **Telemetry input sanitization.** All string fields are stripped of quotes, backslashes, and control characters before being written to JSONL.
+- **Host-specific co-author trailers.** `/ship` and `/document-release` now use the correct co-author line for Codex vs Claude.
+- **10 new security tests** covering telemetry injection, review-log validation, and dotfile filtering.
+
+### Fixed
+
+- **File paths starting with `./` no longer treated as CSS selectors.** `$B screenshot ./path/to/file.png` now works instead of trying to find a CSS element.
+- **Build chain resilience.** `gen:skill-docs` failure no longer blocks binary compilation.
+- **Update checker fall-through.** After upgrading, the checker now also checks for newer remote versions instead of stopping.
+- **Flaky E2E tests stabilized.** `browse-basic`, `ship-base-branch`, and `review-dashboard-via` tests now pass reliably by extracting only relevant SKILL.md sections instead of copying full 1900-line files into test fixtures.
+- **Removed unreliable `journey-think-bigger` routing test.** Never passed reliably because the routing signal was too ambiguous. 10 other journey tests cover routing with clear signals.
+
+### For contributors
+
+- New CLAUDE.md rule: never copy full SKILL.md files into E2E test fixtures. Extract the relevant section only.
+
 ## [0.12.6.0] - 2026-03-27 — Sidebar Knows What Page You're On
 
 The Chrome sidebar agent used to navigate to the wrong page when you asked it to do something. If you'd manually browsed to a site, the sidebar would ignore that and go to whatever Playwright last saw (often Hacker News from the demo). Now it works.

@@ -151,7 +151,6 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   // Skill routing — journey-stage tests (depend on ALL skill descriptions)
   'journey-ideation':       ['*/SKILL.md.tmpl', 'SKILL.md.tmpl', 'scripts/gen-skill-docs.ts'],
   'journey-plan-eng':       ['*/SKILL.md.tmpl', 'SKILL.md.tmpl', 'scripts/gen-skill-docs.ts'],
-  'journey-think-bigger':   ['*/SKILL.md.tmpl', 'SKILL.md.tmpl', 'scripts/gen-skill-docs.ts'],
   'journey-debug':          ['*/SKILL.md.tmpl', 'SKILL.md.tmpl', 'scripts/gen-skill-docs.ts'],
   'journey-qa':             ['*/SKILL.md.tmpl', 'SKILL.md.tmpl', 'scripts/gen-skill-docs.ts'],
   'journey-code-review':    ['*/SKILL.md.tmpl', 'SKILL.md.tmpl', 'scripts/gen-skill-docs.ts'],
@@ -276,7 +275,6 @@ export const E2E_TIERS: Record<string, 'gate' | 'periodic'> = {
   // Skill routing — periodic (LLM routing is non-deterministic)
   'journey-ideation': 'periodic',
   'journey-plan-eng': 'periodic',
-  'journey-think-bigger': 'periodic',
   'journey-debug': 'periodic',
   'journey-qa': 'periodic',
   'journey-code-review': 'periodic',

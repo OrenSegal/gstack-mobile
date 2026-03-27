@@ -3,6 +3,7 @@ import { COMMAND_DESCRIPTIONS } from '../browse/src/commands';
 import { SNAPSHOT_FLAGS } from '../browse/src/snapshot';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 const MAX_SKILL_DESCRIPTION_LENGTH = 1024;
@@ -1596,6 +1597,29 @@ describe('setup script validation', () => {
     expect(setupContent).toContain('migrate_direct_codex_install');
     expect(setupContent).toContain('$HOME/.gstack/repos/gstack');
     expect(setupContent).toContain('avoid duplicate skill discovery');
+  });
+});
+
+describe('discover-skills hidden directory filtering', () => {
+  test('discoverTemplates skips dot-prefixed directories', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-discover-'));
+    try {
+      // Create a hidden dir with a template (should be excluded)
+      fs.mkdirSync(path.join(tmpDir, '.hidden'), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, '.hidden', 'SKILL.md.tmpl'), '---\nname: evil\n---\ntest');
+      // Create a visible dir with a template (should be included)
+      fs.mkdirSync(path.join(tmpDir, 'visible'), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, 'visible', 'SKILL.md.tmpl'), '---\nname: good\n---\ntest');
+
+      const { discoverTemplates } = require('../scripts/discover-skills');
+      const results = discoverTemplates(tmpDir);
+      const dirs = results.map((r: { tmpl: string }) => r.tmpl);
+
+      expect(dirs).toContain('visible/SKILL.md.tmpl');
+      expect(dirs).not.toContain('.hidden/SKILL.md.tmpl');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });
 
