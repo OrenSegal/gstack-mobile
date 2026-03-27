@@ -401,6 +401,7 @@ If `NEEDS_SETUP`:
 **Detect existing test framework and project runtime:**
 
 ```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
 # Detect project runtime
 [ -f Gemfile ] && echo "RUNTIME:ruby"
 [ -f package.json ] && echo "RUNTIME:node"

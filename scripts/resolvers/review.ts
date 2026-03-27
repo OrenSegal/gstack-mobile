@@ -233,6 +233,7 @@ If the Read fails (file not found), say:
 
 After /${first} completes, re-run the design doc check:
 \`\`\`bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
 SLUG=$(~/.claude/skills/gstack/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
 DESIGN=$(ls -t ~/.gstack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
@@ -614,6 +615,7 @@ function generatePlanFileDiscovery(): string {
 2. **Content-based search (fallback):** If no plan file is referenced in conversation context, search by content:
 
 \`\`\`bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-')
 REPO=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
 # Search common plan file locations

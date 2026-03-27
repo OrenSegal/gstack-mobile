@@ -394,6 +394,7 @@ Before reviewing code quality, check: **did they build what was requested — no
 2. **Content-based search (fallback):** If no plan file is referenced in conversation context, search by content:
 
 ```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-')
 REPO=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
 # Search common plan file locations
@@ -650,6 +651,7 @@ Before analyzing coverage, detect the project's test framework:
 2. **If CLAUDE.md has no testing section, auto-detect:**
 
 ```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
 # Detect project runtime
 [ -f Gemfile ] && echo "RUNTIME:ruby"
 [ -f package.json ] && echo "RUNTIME:node"

@@ -263,6 +263,43 @@ describe('gen-skill-docs', () => {
     }
   });
 
+  test('bash blocks with shell globs are zsh-safe (setopt guard or find)', () => {
+    for (const skill of ALL_SKILLS) {
+      const content = fs.readFileSync(path.join(ROOT, skill.dir, 'SKILL.md'), 'utf-8');
+      const bashBlocks = [...content.matchAll(/```bash\n([\s\S]*?)```/g)].map(m => m[1]);
+
+      for (const block of bashBlocks) {
+        const lines = block.split('\n');
+
+        for (const line of lines) {
+          const trimmed = line.trimStart();
+          if (trimmed.startsWith('#')) continue;
+          if (!trimmed.includes('*')) continue;
+          // Skip lines where * is inside find -name, git pathspecs, or $(find)
+          if (/\bfind\b/.test(trimmed)) continue;
+          if (/\bgit\b/.test(trimmed)) continue;
+          if (/\$\(find\b/.test(trimmed)) continue;
+
+          // Check 1: "for VAR in <glob>" must use $(find ...) — caught above by the
+          // $(find check, so any surviving for-in with a glob pattern is a violation
+          if (/\bfor\s+\w+\s+in\b/.test(trimmed) && /\*\./.test(trimmed)) {
+            throw new Error(
+              `Unsafe for-in glob in ${skill.dir}/SKILL.md: "${trimmed}". ` +
+              `Use \`for f in $(find ... -name '*.ext')\` for zsh compatibility.`
+            );
+          }
+
+          // Check 2: ls/cat/rm/grep with glob file args must have setopt guard
+          const isGlobCmd = /\b(?:ls|cat|rm|grep)\b/.test(trimmed) &&
+                            /(?:\/\*[a-z.*]|\*\.[a-z])/.test(trimmed);
+          if (isGlobCmd) {
+            expect(block).toContain('setopt +o nomatch');
+          }
+        }
+      }
+    }
+  });
+
   test('preamble-using skills have correct skill name in telemetry', () => {
     const PREAMBLE_SKILLS = [
       { dir: '.', name: 'gstack' },

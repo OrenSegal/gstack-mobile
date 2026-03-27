@@ -72,7 +72,7 @@ fi
 ([ -f railway.json ] || [ -f railway.toml ]) && echo "PLATFORM:railway"
 
 # Detect deploy workflows
-for f in .github/workflows/*.yml .github/workflows/*.yaml; do
+for f in $(find .github/workflows -maxdepth 1 \\( -name '*.yml' -o -name '*.yaml' \\) 2>/dev/null); do
   [ -f "$f" ] && grep -qiE "deploy|release|production|cd" "$f" 2>/dev/null && echo "DEPLOY_WORKFLOW:$f"
   [ -f "$f" ] && grep -qiE "staging" "$f" 2>/dev/null && echo "STAGING_WORKFLOW:$f"
 done
