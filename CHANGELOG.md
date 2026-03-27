@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.5.1] - 2026-03-27 — Eng Review Now Tells You What to Parallelize
+
+`/plan-eng-review` automatically analyzes your plan for parallel execution opportunities. When your plan has independent workstreams, the review outputs a dependency table, parallel lanes, and execution order so you know exactly which tasks to split into separate git worktrees.
+
+### Added
+
+- **Worktree parallelization strategy** in `/plan-eng-review` required outputs. Extracts a structured table of plan steps with module-level dependencies, computes parallel lanes, and flags merge conflict risks. Skips automatically for single-module or single-track plans.
+
 ## [0.12.5.0] - 2026-03-26 — Fix Codex Hangs: 30-Minute Waits Are Gone
 
 Three bugs in `/codex` caused 30+ minute hangs with zero output during plan reviews and adversarial checks. All three are fixed.
