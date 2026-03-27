@@ -171,6 +171,12 @@ symlink or a real copy. If it's a symlink to your working directory, be aware th
 - During large refactors, remove the symlink (`rm .claude/skills/gstack`) so the
   global install at `~/.claude/skills/gstack/` is used instead
 
+**Prefix setting:** Skill symlinks use either short names (`qa -> gstack/qa`) or
+namespaced (`gstack-qa -> gstack/qa`), controlled by `skill_prefix` in
+`~/.gstack/config.yaml`. When vendoring into a project, run `./setup` after
+symlinking to create the per-skill symlinks with your preferred naming. Pass
+`--no-prefix` or `--prefix` to skip the interactive prompt.
+
 **For plan reviews:** When reviewing plans that modify skill templates or the
 gen-skill-docs pipeline, consider whether the changes should be tested in isolation
 before going live (especially if the user is actively using gstack in other windows).

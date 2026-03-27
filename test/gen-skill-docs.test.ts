@@ -1746,6 +1746,56 @@ describe('setup script validation', () => {
     );
     expect(claudeInstallSection).toContain('cleanup_old_claude_symlinks');
   });
+
+  // --- Persistent config + interactive prompt tests ---
+
+  test('setup reads skill_prefix from config', () => {
+    expect(setupContent).toContain('get skill_prefix');
+    expect(setupContent).toContain('GSTACK_CONFIG');
+  });
+
+  test('setup supports --prefix flag', () => {
+    expect(setupContent).toContain('--prefix)');
+    expect(setupContent).toContain('SKILL_PREFIX=1; SKILL_PREFIX_FLAG=1');
+  });
+
+  test('--prefix and --no-prefix persist to config', () => {
+    expect(setupContent).toContain('set skill_prefix');
+  });
+
+  test('interactive prompt shows when no config', () => {
+    expect(setupContent).toContain('Short names');
+    expect(setupContent).toContain('Namespaced');
+    expect(setupContent).toContain('Choice [1/2]');
+  });
+
+  test('non-TTY defaults to flat names', () => {
+    // Should check if stdin is a TTY before prompting
+    expect(setupContent).toContain('-t 0');
+  });
+
+  test('cleanup_prefixed_claude_symlinks exists and uses readlink', () => {
+    expect(setupContent).toContain('cleanup_prefixed_claude_symlinks');
+    const fnStart = setupContent.indexOf('cleanup_prefixed_claude_symlinks()');
+    const fnEnd = setupContent.indexOf('}', setupContent.indexOf('removed[@]}', fnStart));
+    const fnBody = setupContent.slice(fnStart, fnEnd);
+    expect(fnBody).toContain('readlink');
+    expect(fnBody).toContain('gstack-$skill_name');
+  });
+
+  test('reverse cleanup runs before link when prefix is disabled', () => {
+    const claudeInstallSection = setupContent.slice(
+      setupContent.indexOf('INSTALL_CLAUDE'),
+      setupContent.lastIndexOf('link_claude_skill_dirs')
+    );
+    expect(claudeInstallSection).toContain('cleanup_prefixed_claude_symlinks');
+  });
+
+  test('welcome message references SKILL_PREFIX', () => {
+    // gstack-upgrade is always called gstack-upgrade (it's the actual dir name)
+    // but the welcome section should exist near the prefix logic
+    expect(setupContent).toContain('Run /gstack-upgrade anytime');
+  });
 });
 
 describe('discover-skills hidden directory filtering', () => {

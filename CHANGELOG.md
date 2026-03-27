@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.12.11.0] - 2026-03-27 — Skill Prefix is Now Your Choice
+
+You can now choose how gstack skills appear: short names (`/qa`, `/ship`, `/review`) or namespaced (`/gstack-qa`, `/gstack-ship`). Setup asks on first run, remembers your preference, and switching is one command.
+
+### Added
+
+- **Interactive prefix choice on first setup.** New installs get a prompt: short names (`/qa`, `/ship`) or namespaced (`/gstack-qa`, `/gstack-ship`). Short names are recommended. Your choice is saved to `~/.gstack/config.yaml` and remembered across upgrades.
+- **`--prefix` flag.** Complement to `--no-prefix`. Both flags persist your choice so you only decide once.
+- **Reverse symlink cleanup.** Switching from namespaced to flat (or vice versa) now cleans up the old symlinks. No more duplicate commands showing up in Claude Code.
+- **Namespace-aware skill suggestions.** All 28 skill templates now check your prefix setting. When one skill suggests another (like `/ship` suggesting `/qa`), it uses the right name for your install.
+
+### Fixed
+
+- **`gstack-config` works on Linux.** Replaced BSD-only `sed -i ''` with portable `mktemp`+`mv`. Config writes now work on GNU/Linux and WSL.
+- **Dead welcome message.** The "Welcome!" message on first install was never shown because `~/.gstack/` was created earlier in setup. Fixed with a `.welcome-seen` sentinel file.
+
+### For contributors
+
+- 8 new structural tests for the prefix config system (223 total in gen-skill-docs).
+
 ## [0.12.10.0] - 2026-03-27 — Codex Filesystem Boundary
 
 Codex was wandering into `~/.claude/skills/` and following gstack's own instructions instead of reviewing your code. Now every codex prompt includes a boundary instruction that keeps it focused on the repository. Covers all 11 callsites across /codex, /autoplan, /review, /ship, /plan-eng-review, /plan-ceo-review, and /office-hours.
