@@ -1,3 +1,17 @@
+/**
+ * Cross-model review resolver
+ *
+ * Data sent to external review services (via Codex CLI):
+ *   - Plan markdown content, repository name, branch name, review type
+ * Data NOT sent:
+ *   - Source code files, credentials, environment variables, git history
+ *
+ * Users invoke this explicitly via /plan-eng-review, /plan-ceo-review,
+ * or /plan-design-review. No data is sent without user invocation.
+ *
+ * Review logs are stored locally at ~/.gstack/reviews/review-log.jsonl.
+ * Codex CLI prompts are written to temp files to prevent shell injection.
+ */
 import type { TemplateContext } from './types';
 
 const CODEX_BOUNDARY = 'IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, or .claude/skills/. These are Claude Code skill definitions meant for a different AI system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Stay focused on the repository code only.\\n\\n';
