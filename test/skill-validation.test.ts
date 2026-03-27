@@ -1325,7 +1325,7 @@ describe('Codex skill', () => {
     expect(content).toContain('fall back to the Claude adversarial subagent');
     // Review log uses new skill name
     expect(content).toContain('adversarial-review');
-    expect(content).toContain('xhigh');
+    expect(content).toContain('reasoning_effort="high"');
     expect(content).toContain('ADVERSARIAL REVIEW SYNTHESIS');
   });
 
@@ -1335,7 +1335,7 @@ describe('Codex skill', () => {
     expect(content).toContain('< 50');
     expect(content).toContain('200+');
     expect(content).toContain('adversarial-review');
-    expect(content).toContain('xhigh');
+    expect(content).toContain('reasoning_effort="high"');
     expect(content).toContain('Investigate and fix');
   });
 

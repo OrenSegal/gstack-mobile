@@ -749,7 +749,7 @@ THE PLAN:
 
 ```bash
 TMPERR_PV=$(mktemp /tmp/codex-planreview-XXXXXXXX)
-codex exec "<prompt>" -C "$(git rev-parse --show-toplevel)" -s read-only -c 'model_reasoning_effort="xhigh"' --enable web_search_cached 2>"$TMPERR_PV"
+codex exec "<prompt>" -C "$(git rev-parse --show-toplevel)" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached 2>"$TMPERR_PV"
 ```
 
 Use a 5-minute timeout (`timeout: 300000`). After the command completes, read stderr:

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.12.5.0] - 2026-03-26 — Fix Codex Hangs: 30-Minute Waits Are Gone
+
+Three bugs in `/codex` caused 30+ minute hangs with zero output during plan reviews and adversarial checks. All three are fixed.
+
+### Fixed
+
+- **Plan files now visible to Codex sandbox.** Codex runs sandboxed to the repo root and couldn't see plan files at `~/.claude/plans/`. It would waste 10+ tool calls searching before giving up. Now the plan content is embedded directly in the prompt, and referenced source files are listed so Codex reads them immediately.
+- **Streaming output actually streams.** Python's stdout buffering meant zero output visible until the process exited. Added `PYTHONUNBUFFERED=1`, `python3 -u`, and `flush=True` on every print call across all three Codex modes.
+- **Sane reasoning effort defaults.** Replaced hardcoded `xhigh` (23x more tokens, known 50+ min hangs per OpenAI issues #8545, #8402, #6931) with per-mode defaults: `high` for review and challenge, `medium` for consult. Users can override with `--xhigh` flag when they want maximum reasoning.
+- **`--xhigh` override works in all modes.** The override reminder was missing from challenge and consult mode instructions. Found by adversarial review.
+
 ## [0.12.4.0] - 2026-03-26 — Full Commit Coverage in /ship
 
 When you ship a branch with 12 commits spanning performance work, dead code removal, and test infra, the PR should mention all three. It wasn't. The CHANGELOG and PR summary biased toward whatever happened most recently, silently dropping earlier work.

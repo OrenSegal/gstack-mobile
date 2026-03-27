@@ -714,7 +714,7 @@ Write the full prompt (context block + instructions) to this file. Use the mode-
 
 ```bash
 TMPERR_OH=$(mktemp /tmp/codex-oh-err-XXXXXXXX)
-codex exec "$(cat "$CODEX_PROMPT_FILE")" -C "$(git rev-parse --show-toplevel)" -s read-only -c 'model_reasoning_effort="xhigh"' --enable web_search_cached 2>"$TMPERR_OH"
+codex exec "$(cat "$CODEX_PROMPT_FILE")" -C "$(git rev-parse --show-toplevel)" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached 2>"$TMPERR_OH"
 ```
 
 Use a 5-minute timeout (`timeout: 300000`). After the command completes, read stderr:
