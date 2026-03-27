@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.12.8.0] - 2026-03-27 — Codex No Longer Reviews the Wrong Project
+
+When you run gstack in Conductor with multiple workspaces open, Codex could silently review the wrong project. The `codex exec -C` flag resolved the repo root inline via `$(git rev-parse --show-toplevel)`, which evaluates in whatever cwd the background shell inherits. In multi-workspace environments, that cwd might be a different project entirely.
+
+### Fixed
+
+- **Codex exec resolves repo root eagerly.** All 12 `codex exec` commands across `/codex`, `/autoplan`, and 4 resolver functions now resolve `_REPO_ROOT` at the top of each bash block and reference the stored value in `-C`. No more inline evaluation that races with other workspaces.
+- **`codex review` also gets cwd protection.** `codex review` doesn't support `-C`, so it now gets `cd "$_REPO_ROOT"` before invocation. Same class of bug, different command.
+- **Silent fallback replaced with hard fail.** The `|| pwd` fallback silently used whatever random cwd was available. Now it errors out with a clear message if not in a git repo.
+
+### Removed
+
+- **Dead resolver copies in gen-skill-docs.ts.** Six functions that were moved to `scripts/resolvers/` months ago but never deleted. They had already diverged from the live versions and contained the old vulnerable pattern.
+
+### Added
+
+- **Regression test** that scans all `.tmpl`, resolver `.ts`, and generated `SKILL.md` files for codex commands using inline `$(git rev-parse --show-toplevel)`. Prevents reintroduction.
+
 ## [0.12.7.0] - 2026-03-27 — Community PRs + Security Hardening
 
 Seven community contributions merged, reviewed, and tested. Plus security hardening for telemetry and review logging, and E2E test stability fixes.
