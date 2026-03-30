@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.13.10.0] - 2026-03-29 — Office Hours Gets a Reading List
+
+Repeat /office-hours users now get fresh, curated resources every session instead of the same YC closing. 34 hand-picked videos and essays from Garry Tan, Lightcone Podcast, YC Startup School, and Paul Graham, contextually matched to what came up during the session. The system remembers what it already showed you, so you never see the same recommendation twice.
+
+### Added
+
+- **Rotating founder resources in /office-hours closing.** 34 curated resources across 5 categories (Garry Tan videos, YC Backstory, Lightcone Podcast, YC Startup School, Paul Graham essays). Claude picks 2-3 per session based on session context, not randomly.
+- **Resource dedup log.** Tracks which resources were shown in `~/.gstack/projects/$SLUG/resources-shown.jsonl` so repeat users always see fresh content.
+- **Resource selection analytics.** Logs which resources get picked to `skill-usage.jsonl` so you can see patterns over time.
+- **Browser-open offer.** After showing resources, offers to open them in your browser so you can check them out later.
+
+### Fixed
+
+- **Build script chmod safety net.** `bun build --compile` output now gets `chmod +x` explicitly, preventing "permission denied" errors when binaries lose execute permission during workspace cloning or file transfer.
+
 ## [0.13.9.0] - 2026-03-29 — Composable Skills
 
 Skills can now load other skills inline. Write `{{INVOKE_SKILL:office-hours}}` in a template and the generator emits the right "read file, skip preamble, follow instructions" prose automatically. Handles host-aware paths and customizable skip lists.
