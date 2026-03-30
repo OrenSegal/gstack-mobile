@@ -19,7 +19,7 @@ import { handleWriteCommand } from './write-commands';
 import { handleMetaCommand } from './meta-commands';
 import { handleCookiePickerRoute } from './cookie-picker-routes';
 import { sanitizeExtensionUrl } from './sidebar-utils';
-import { COMMAND_DESCRIPTIONS } from './commands';
+import { COMMAND_DESCRIPTIONS, PAGE_CONTENT_COMMANDS, wrapUntrustedContent } from './commands';
 import { handleSnapshot, SNAPSHOT_FLAGS } from './snapshot';
 import { resolveConfig, ensureStateDir, readVersionHash } from './config';
 import { emitActivity, subscribe, getActivityAfter, getActivityHistory, getSubscriberCount } from './activity';
@@ -670,6 +670,9 @@ async function handleCommand(body: any): Promise<Response> {
 
     if (READ_COMMANDS.has(command)) {
       result = await handleReadCommand(command, args, browserManager);
+      if (PAGE_CONTENT_COMMANDS.has(command)) {
+        result = wrapUntrustedContent(result, browserManager.getCurrentUrl());
+      }
     } else if (WRITE_COMMANDS.has(command)) {
       result = await handleWriteCommand(command, args, browserManager);
     } else if (META_COMMANDS.has(command)) {
