@@ -46,6 +46,7 @@ esac
 # ─── Resolve skill prefix preference ─────────────────────────
 # Priority: CLI flag > saved config > interactive prompt (or flat default for non-TTY)
 GSTACK_CONFIG="$SOURCE_GSTACK_DIR/bin/gstack-config"
+export GSTACK_SETUP_RUNNING=1  # Prevent gstack-config post-set hook from triggering relink mid-setup
 if [ "$SKILL_PREFIX_FLAG" -eq 0 ]; then
   _saved_prefix="$("$GSTACK_CONFIG" get skill_prefix 2>/dev/null || true)"
   if [ "$_saved_prefix" = "true" ]; then

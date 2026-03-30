@@ -8,7 +8,7 @@ description: |
   Use when asked to "debug this", "fix this bug", "why is this broken",
   "investigate this error", or "root cause analysis".
   Proactively suggest when the user reports errors, unexpected behavior, or
-  is troubleshooting why something stopped working.
+  is troubleshooting why something stopped working. (gstack)
 allowed-tools:
   - Bash
   - Read

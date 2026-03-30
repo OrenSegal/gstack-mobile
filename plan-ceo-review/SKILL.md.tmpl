@@ -10,7 +10,7 @@ description: |
   Use when asked to "think bigger", "expand scope", "strategy review", "rethink this",
   or "is this ambitious enough".
   Proactively suggest when the user is questioning scope or ambition of a plan,
-  or when the plan feels like it could be thinking bigger.
+  or when the plan feels like it could be thinking bigger. (gstack)
 benefits-from: [office-hours]
 allowed-tools:
   - Read

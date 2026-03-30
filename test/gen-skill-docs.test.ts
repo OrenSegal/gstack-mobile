@@ -2036,6 +2036,100 @@ describe('telemetry', () => {
   });
 });
 
+describe('community fixes wave', () => {
+  // Helper to get all generated SKILL.md files
+  function getAllSkillMds(): Array<{ name: string; content: string }> {
+    const results: Array<{ name: string; content: string }> = [];
+    const rootPath = path.join(ROOT, 'SKILL.md');
+    if (fs.existsSync(rootPath)) {
+      results.push({ name: 'root', content: fs.readFileSync(rootPath, 'utf-8') });
+    }
+    for (const entry of fs.readdirSync(ROOT, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const skillPath = path.join(ROOT, entry.name, 'SKILL.md');
+      if (fs.existsSync(skillPath)) {
+        results.push({ name: entry.name, content: fs.readFileSync(skillPath, 'utf-8') });
+      }
+    }
+    return results;
+  }
+
+  // #594 — Discoverability: every SKILL.md.tmpl description contains "gstack"
+  test('every SKILL.md.tmpl description contains "gstack"', () => {
+    for (const skill of ALL_SKILLS) {
+      const tmplPath = skill.dir === '.' ? path.join(ROOT, 'SKILL.md.tmpl') : path.join(ROOT, skill.dir, 'SKILL.md.tmpl');
+      const content = fs.readFileSync(tmplPath, 'utf-8');
+      const desc = extractDescription(content);
+      expect(desc.toLowerCase()).toContain('gstack');
+    }
+  });
+
+  // #594 — Discoverability: first line of each description is under 120 chars
+  test('every SKILL.md.tmpl description first line is under 120 chars', () => {
+    for (const skill of ALL_SKILLS) {
+      const tmplPath = skill.dir === '.' ? path.join(ROOT, 'SKILL.md.tmpl') : path.join(ROOT, skill.dir, 'SKILL.md.tmpl');
+      const content = fs.readFileSync(tmplPath, 'utf-8');
+      const desc = extractDescription(content);
+      const firstLine = desc.split('\n')[0];
+      expect(firstLine.length).toBeLessThanOrEqual(120);
+    }
+  });
+
+  // #573 — Feature signals: ship/SKILL.md contains feature signal detection
+  test('ship/SKILL.md contains feature signal detection in Step 4', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'ship', 'SKILL.md'), 'utf-8');
+    expect(content.toLowerCase()).toContain('feature signal');
+  });
+
+  // #510 — Context warnings: no SKILL.md contains "running low on context"
+  test('no generated SKILL.md contains "running low on context"', () => {
+    const skills = getAllSkillMds();
+    for (const { name, content } of skills) {
+      expect(content).not.toContain('running low on context');
+    }
+  });
+
+  // #510 — Context warnings: plan-eng-review has explicit anti-warning
+  test('plan-eng-review/SKILL.md contains "Do not preemptively warn"', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'plan-eng-review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('Do not preemptively warn');
+  });
+
+  // #474 — Safety Net: no SKILL.md uses find with -delete
+  test('no generated SKILL.md contains find with -delete flag', () => {
+    const skills = getAllSkillMds();
+    for (const { name, content } of skills) {
+      // Match find commands that use -delete (but not prose mentioning the word "delete")
+      const lines = content.split('\n');
+      for (const line of lines) {
+        if (line.includes('find ') && line.includes('-delete')) {
+          throw new Error(`${name}/SKILL.md contains find with -delete: ${line.trim()}`);
+        }
+      }
+    }
+  });
+
+  // #467 — Telemetry: preamble JSONL writes are gated by telemetry setting
+  test('preamble JSONL writes are inside telemetry conditional', () => {
+    const preamble = fs.readFileSync(path.join(ROOT, 'scripts/resolvers/preamble.ts'), 'utf-8');
+    // Find all skill-usage.jsonl write lines
+    const lines = preamble.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes('skill-usage.jsonl') && lines[i].includes('>>')) {
+        // Look backwards for a telemetry conditional within 5 lines
+        let foundConditional = false;
+        for (let j = i - 1; j >= Math.max(0, i - 5); j--) {
+          if (lines[j].includes('_TEL') && lines[j].includes('off')) {
+            foundConditional = true;
+            break;
+          }
+        }
+        expect(foundConditional).toBe(true);
+      }
+    }
+  });
+});
+
 describe('codex commands must not use inline $(git rev-parse --show-toplevel) for cwd', () => {
   // Regression test: inline $(git rev-parse --show-toplevel) in codex exec -C
   // or codex review without cd evaluates in whatever cwd the background shell

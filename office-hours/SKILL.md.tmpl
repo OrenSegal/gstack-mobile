@@ -11,7 +11,7 @@ description: |
   this", "office hours", or "is this worth building".
   Proactively suggest when the user describes a new product idea or is exploring
   whether something is worth building — before any code is written.
-  Use before /plan-ceo-review or /plan-eng-review.
+  Use before /plan-ceo-review or /plan-eng-review. (gstack)
 allowed-tools:
   - Bash
   - Read
