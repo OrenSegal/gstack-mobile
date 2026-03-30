@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.13.9.0] - 2026-03-29 — Composable Skills
+
+Skills can now load other skills inline. Write `{{INVOKE_SKILL:office-hours}}` in a template and the generator emits the right "read file, skip preamble, follow instructions" prose automatically. Handles host-aware paths and customizable skip lists.
+
+### Added
+
+- **`{{INVOKE_SKILL:skill-name}}` resolver.** Composable skill loading as a first-class resolver. Emits host-aware prose that tells Claude or Codex to read another skill's SKILL.md and follow it inline, skipping preamble sections. Supports optional `skip=` parameter for additional sections to skip.
+- **Parameterized resolver support.** The placeholder regex now handles `{{NAME:arg1:arg2}}`, enabling resolvers that take arguments at generation time. Fully backward compatible with existing `{{NAME}}` patterns.
+- **`{{CHANGELOG_WORKFLOW}}` resolver.** Changelog generation logic extracted from /ship into a reusable resolver. Includes voice guidance ("lead with what the user can now do") inline.
+- **Frontmatter `name:` for skill registration.** Setup script and gen-skill-docs now read `name:` from SKILL.md frontmatter for symlink naming. Enables directory names that differ from invocation names (e.g., `run-tests/` directory registered as `/test`).
+- **Proactive skill routing.** Skills now ask once to add routing rules to your project's CLAUDE.md. This makes Claude invoke the right skill automatically instead of answering directly. Your choice is remembered in `~/.gstack/config.yaml`.
+- **Annotated config file.** `~/.gstack/config.yaml` now gets a documented header on first creation explaining every setting. Edit it anytime.
+
+### Changed
+
+- **BENEFITS_FROM now delegates to INVOKE_SKILL.** Eliminated duplicated skip-list logic. The prerequisite offer wrapper stays in BENEFITS_FROM, but the actual "read and follow" instructions come from INVOKE_SKILL.
+- **/plan-ceo-review mid-session fallback uses INVOKE_SKILL.** The "user can't articulate the problem, offer /office-hours" path now uses the composable resolver instead of inline prose.
+- **Stronger routing language.** office-hours, investigate, and ship descriptions now say "Proactively invoke" instead of "Proactively suggest" for more reliable automatic skill invocation.
+
+### Fixed
+
+- **Config grep anchored to line start.** Commented header lines no longer shadow real config values.
+
 ## [0.13.8.0] - 2026-03-29 — Security Audit Round 2
 
 Browse output is now wrapped in trust boundary markers so agents can tell page content from tool output. Markers are escape-proof. The Chrome extension validates message senders. CDP binds to localhost only. Bun installs use checksum verification.
