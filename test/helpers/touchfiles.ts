@@ -59,6 +59,15 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   'review-base-branch':       ['review/**'],
   'review-design-lite':       ['review/**', 'test/fixtures/review-eval-design-slop.*'],
 
+  // Review Army (specialist dispatch)
+  'review-army-migration-safety': ['review/**', 'scripts/resolvers/review-army.ts', 'bin/gstack-diff-scope'],
+  'review-army-perf-n-plus-one':  ['review/**', 'scripts/resolvers/review-army.ts', 'bin/gstack-diff-scope'],
+  'review-army-delivery-audit':   ['review/**', 'scripts/resolvers/review.ts', 'scripts/resolvers/review-army.ts'],
+  'review-army-quality-score':    ['review/**', 'scripts/resolvers/review-army.ts'],
+  'review-army-json-findings':    ['review/**', 'scripts/resolvers/review-army.ts'],
+  'review-army-red-team':         ['review/**', 'scripts/resolvers/review-army.ts'],
+  'review-army-consensus':        ['review/**', 'scripts/resolvers/review-army.ts'],
+
   // Office Hours
   'office-hours-spec-review':  ['office-hours/**', 'scripts/gen-skill-docs.ts'],
 
@@ -203,6 +212,15 @@ export const E2E_TIERS: Record<string, 'gate' | 'periodic'> = {
   'review-coverage-audit': 'gate',
   'review-plan-completion': 'gate',
   'review-dashboard-via': 'gate',
+
+  // Review Army — gate for core functionality, periodic for multi-specialist
+  'review-army-migration-safety': 'gate',   // Specialist activation guardrail
+  'review-army-perf-n-plus-one': 'gate',    // Specialist activation guardrail
+  'review-army-delivery-audit': 'gate',     // Delivery integrity guardrail
+  'review-army-quality-score': 'gate',      // Score computation
+  'review-army-json-findings': 'gate',      // JSON schema compliance
+  'review-army-red-team': 'periodic',       // Multi-agent coordination
+  'review-army-consensus': 'periodic',      // Multi-specialist agreement
 
   // Office Hours
   'office-hours-spec-review': 'gate',
