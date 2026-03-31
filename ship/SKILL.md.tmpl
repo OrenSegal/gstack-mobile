@@ -232,6 +232,8 @@ If multiple suites need to run, run them sequentially (each needs a test lane). 
 
 {{LEARNINGS_SEARCH}}
 
+{{SCOPE_DRIFT}}
+
 ---
 
 ## Step 3.5: Pre-Landing Review
@@ -508,6 +510,10 @@ you missed it.>
 <If Greptile comments were found: bullet list with [FIXED] / [FALSE POSITIVE] / [ALREADY FIXED] tag + one-line summary per comment>
 <If no Greptile comments found: "No Greptile comments.">
 <If no PR existed during Step 3.75: omit this section entirely>
+
+## Scope Drift
+<If scope drift ran: "Scope Check: CLEAN" or list of drift/creep findings>
+<If no scope drift: omit this section>
 
 ## Plan Completion
 <If plan file found: completion checklist summary from Step 3.45>
