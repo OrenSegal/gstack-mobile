@@ -63,8 +63,16 @@ gstack/
 │   │   └── snapshot.ts  # SNAPSHOT_FLAGS metadata array
 │   ├── test/        # Integration tests + fixtures
 │   └── dist/        # Compiled binary
+├── hosts/           # Typed host configs (one per AI agent)
+│   ├── claude.ts    # Primary host config
+│   ├── codex.ts, factory.ts, kiro.ts  # Existing hosts
+│   ├── opencode.ts, slate.ts, cursor.ts, openclaw.ts  # New hosts
+│   └── index.ts     # Registry: exports all, derives Host type
 ├── scripts/         # Build + DX tooling
-│   ├── gen-skill-docs.ts  # Template → SKILL.md generator
+│   ├── gen-skill-docs.ts  # Template → SKILL.md generator (config-driven)
+│   ├── host-config.ts     # HostConfig interface + validator
+│   ├── host-config-export.ts  # Shell bridge for setup script
+│   ├── host-adapters/     # Host-specific adapters (OpenClaw tool mapping)
 │   ├── resolvers/   # Template resolver modules (preamble, design, review, etc.)
 │   ├── skill-check.ts     # Health dashboard
 │   └── dev-skill.ts       # Watch mode
@@ -108,6 +116,8 @@ gstack/
 ├── .github/         # CI workflows + Docker image
 │   ├── workflows/   # evals.yml (E2E on Ubicloud), skill-docs.yml, actionlint.yml
 │   └── docker/      # Dockerfile.ci (pre-baked toolchain + Playwright/Chromium)
+├── contrib/         # Contributor-only tools (never installed for users)
+│   └── add-host/    # /gstack-contrib-add-host skill
 ├── setup            # One-time setup: build binary + symlink skills
 ├── SKILL.md         # Generated from SKILL.md.tmpl (don't edit directly)
 ├── SKILL.md.tmpl    # Template: edit this, run gen:skill-docs

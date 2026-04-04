@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.15.6.0] - 2026-04-04 — Declarative Multi-Host Platform
+
+Adding a new coding agent to gstack used to mean touching 9 files and knowing the internals of `gen-skill-docs.ts`. Now it's one TypeScript config file and a re-export. Zero code changes elsewhere. Tests auto-parameterize.
+
+### Added
+
+- **Declarative host config system.** Every host is a typed `HostConfig` object in `hosts/*.ts`. The generator, setup, skill-check, platform-detect, uninstall, and worktree copy all consume configs instead of hardcoded switch statements. Adding a host = one file + re-export in `hosts/index.ts`.
+- **4 new hosts: OpenCode, Slate, Cursor, OpenClaw.** `bun run gen:skill-docs --host all` now generates for 8 hosts. Each produces valid SKILL.md output with zero `.claude/skills` path leakage.
+- **OpenClaw adapter.** OpenClaw gets a hybrid approach: config for paths/frontmatter/detection + a post-processing adapter for semantic tool mapping (Bash→exec, Agent→sessions_spawn, AskUserQuestion→prose). Includes `SOUL.md` via `staticFiles` config.
+- **106 new tests.** 71 tests for config validation, HOST_PATHS derivation, export CLI, golden-file regression, and per-host correctness. 35 parameterized smoke tests covering all 7 external hosts (output exists, no path leakage, frontmatter valid, freshness, skip rules).
+- **`host-config-export.ts` CLI.** Exposes host configs to bash scripts via `list`, `get`, `detect`, `validate`, `symlinks` commands. No YAML parsing needed in bash.
+- **Contributor `/gstack-contrib-add-host` skill.** Guides new host config creation. Lives in `contrib/`, excluded from user installs.
+- **Golden-file baselines.** Snapshots of ship/SKILL.md for Claude, Codex, and Factory verify the refactor produces identical output.
+- **Per-host install instructions in README.** Every supported agent has its own copy-paste install block.
+
+### Changed
+
+- **`gen-skill-docs.ts` is now config-driven.** EXTERNAL_HOST_CONFIG, transformFrontmatter host branches, path/tool rewrite if-chains, ALL_HOSTS array, and skill skip logic all replaced with config lookups.
+- **`types.ts` derives Host type from configs.** No more hardcoded `'claude' | 'codex' | 'factory'`. HOST_PATHS built dynamically from each config's globalRoot/usesEnvVars.
+- **Preamble, co-author trailer, resolver suppression all read from config.** hostConfigDir, co-author strings, and suppressedResolvers driven by host configs instead of per-host switch statements.
+- **`skill-check.ts`, `worktree.ts`, `platform-detect` iterate configs.** No per-host blocks to maintain.
+
+### Fixed
+
+- **Sidebar E2E tests now self-contained.** Fixed stale URL assertion in sidebar-url-accuracy, simplified sidebar-css-interaction task. All 3 sidebar tests pass without external browser dependencies.
+
 ## [0.15.5.0] - 2026-04-04 — Interactive DX Review + Plan Mode Skill Fix
 
 `/plan-devex-review` now feels like sitting down with a developer advocate who has used 100 CLI tools. Instead of speed-running 8 scores, it asks who your developer is, benchmarks you against competitors' onboarding times, makes you design your magical moment, and traces every friction point step by step before scoring anything.

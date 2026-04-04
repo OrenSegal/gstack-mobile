@@ -8,6 +8,11 @@ bin/gstack-global-discover
 .claude/skills/
 .agents/
 .factory/
+.kiro/
+.opencode/
+.slate/
+.cursor/
+.openclaw/
 .context/
 extension/.auth.json
 .gstack-worktrees/

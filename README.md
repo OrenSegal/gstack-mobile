@@ -59,49 +59,79 @@ Real files get committed to your repo (not a submodule), so `git clone` just wor
 > git clone https://github.com/garrytan/gstack.git ~/.claude/skills/gstack
 > ```
 
-### Codex, Gemini CLI, or Cursor
+### Other AI Agents
 
-gstack works on any agent that supports the [SKILL.md standard](https://github.com/anthropics/claude-code). Skills live in `.agents/skills/` and are discovered automatically.
+gstack works on 8 AI coding agents, not just Claude. All 31 skills work across
+every supported agent. Setup auto-detects which agents you have installed, or
+you can target a specific one.
 
-Install to one repo:
+#### Auto-detect (installs for every agent on your machine)
 
 ```bash
-git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git .agents/skills/gstack
-cd .agents/skills/gstack && ./setup --host codex
+git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/gstack
+cd ~/gstack && ./setup
 ```
 
-When setup runs from `.agents/skills/gstack`, it installs the generated Codex skills next to it in the same repo and does not write to `~/.codex/skills`.
-
-Install once for your user account:
+#### OpenAI Codex CLI
 
 ```bash
 git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/gstack
 cd ~/gstack && ./setup --host codex
 ```
 
-`setup --host codex` creates the runtime root at `~/.codex/skills/gstack` and
-links the generated Codex skills at the top level. This avoids duplicate skill
-discovery from the source repo checkout.
+Skills install to `~/.codex/skills/gstack-*/`. For repo-local installs, clone
+into `.agents/skills/gstack` instead.
 
-Or let setup auto-detect which agents you have installed:
+#### OpenCode
 
 ```bash
 git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/gstack
-cd ~/gstack && ./setup --host auto
+cd ~/gstack && ./setup --host opencode
 ```
 
-For Codex-compatible hosts, setup now supports both repo-local installs from `.agents/skills/gstack` and user-global installs from `~/.codex/skills/gstack`. All 31 skills work across all supported agents. Hook-based safety skills (careful, freeze, guard) use inline safety advisory prose on non-Claude hosts.
+Skills install to `~/.config/opencode/skills/gstack-*/`.
 
-### Factory Droid
+#### Cursor
 
-gstack works with [Factory Droid](https://factory.ai). Skills install to `.factory/skills/` and are discovered automatically. Sensitive skills (ship, land-and-deploy, guard) use `disable-model-invocation: true` so Droids don't auto-invoke them.
+```bash
+git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/gstack
+cd ~/gstack && ./setup --host cursor
+```
+
+Skills install to `~/.cursor/skills/gstack-*/`.
+
+#### Factory Droid
 
 ```bash
 git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/gstack
 cd ~/gstack && ./setup --host factory
 ```
 
-Skills install to `~/.factory/skills/gstack-*/`. Restart `droid` to rescan skills, then type `/qa` to get started.
+Skills install to `~/.factory/skills/gstack-*/`. Sensitive skills use
+`disable-model-invocation: true` so Droids don't auto-invoke them.
+
+#### OpenClaw
+
+```bash
+git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/gstack
+cd ~/gstack && ./setup --host openclaw
+```
+
+Skills install to `~/.openclaw/skills/gstack-*/`. Tool names are rewritten
+for OpenClaw's tool system (exec, read, write, edit, sessions_spawn).
+
+#### Slate / Kiro
+
+```bash
+./setup --host slate       # Slate (Random Labs)
+./setup --host kiro        # Amazon Kiro
+```
+
+Hook-based safety skills (careful, freeze, guard) use inline safety advisory
+prose on all non-Claude hosts.
+
+**Want to add support for another agent?** See [docs/ADDING_A_HOST.md](docs/ADDING_A_HOST.md).
+It's one TypeScript config file, zero code changes.
 
 ### Voice input (AquaVoice, Whisper, etc.)
 

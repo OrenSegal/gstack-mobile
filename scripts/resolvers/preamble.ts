@@ -1,4 +1,5 @@
 import type { TemplateContext } from './types';
+import { getHostConfig } from '../../hosts/index';
 
 /**
  * Preamble architecture — why every skill needs this
@@ -13,10 +14,10 @@ import type { TemplateContext } from './types';
  */
 
 function generatePreambleBash(ctx: TemplateContext): string {
-  const hostConfigDir: Record<string, string> = { codex: '.codex', factory: '.factory' };
-  const runtimeRoot = (ctx.host !== 'claude')
+  const hostConfig = getHostConfig(ctx.host);
+  const runtimeRoot = hostConfig.usesEnvVars
     ? `_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-GSTACK_ROOT="$HOME/${hostConfigDir[ctx.host]}/skills/gstack"
+GSTACK_ROOT="$HOME/${hostConfig.globalRoot}"
 [ -n "$_ROOT" ] && [ -d "$_ROOT/${ctx.paths.localSkillRoot}" ] && GSTACK_ROOT="$_ROOT/${ctx.paths.localSkillRoot}"
 GSTACK_BIN="$GSTACK_ROOT/bin"
 GSTACK_BROWSE="$GSTACK_ROOT/browse/dist"
