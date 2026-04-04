@@ -1,12 +1,12 @@
 ---
-name: connect-chrome
-version: 0.1.0
+name: open-gstack-browser
+version: 0.2.0
 description: |
-  Launch real Chrome controlled by gstack with the Side Panel extension auto-loaded.
-  One command: connects Claude to a visible Chrome window where you can watch every
-  action in real time. The extension shows a live activity feed in the Side Panel.
-  Use when asked to "connect chrome", "open chrome", "real browser", "launch chrome",
-  "side panel", or "control my browser".
+  Launch GStack Browser — AI-controlled Chromium with the sidebar extension baked in.
+  Opens a visible browser window where you can watch every action in real time.
+  The sidebar shows a live activity feed and chat. Anti-bot stealth built in.
+  Use when asked to "open gstack browser", "launch browser", "connect chrome",
+  "open chrome", "real browser", "launch chrome", "side panel", or "control my browser".
   Voice triggers (speech-to-text aliases): "show me the browser".
 allowed-tools:
   - Bash
@@ -47,7 +47,7 @@ echo "TELEMETRY: ${_TEL:-off}"
 echo "TEL_PROMPTED: $_TEL_PROMPTED"
 mkdir -p ~/.gstack/analytics
 if [ "$_TEL" != "off" ]; then
-echo '{"skill":"connect-chrome","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","repo":"'$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || echo "unknown")'"}'  >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
+echo '{"skill":"open-gstack-browser","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","repo":"'$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || echo "unknown")'"}'  >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
 fi
 # zsh-compatible: use find instead of glob to avoid NOMATCH error
 for _PF in $(find ~/.gstack/analytics -maxdepth 1 -name '.pending-*' 2>/dev/null); do
@@ -72,7 +72,7 @@ else
   echo "LEARNINGS: 0"
 fi
 # Session timeline: record skill start (local-only, never sent anywhere)
-~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"connect-chrome","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"open-gstack-browser","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
 # Check if CLAUDE.md has routing rules
 _HAS_ROUTING="no"
 if [ -f CLAUDE.md ] && grep -q "## Skill routing" CLAUDE.md 2>/dev/null; then
@@ -475,10 +475,10 @@ Then write a `## GSTACK REVIEW REPORT` section to the end of the plan file:
 file you are allowed to edit in plan mode. The plan file review report is part of the
 plan's living status.
 
-# /connect-chrome — Launch Real Chrome with Side Panel
+# /open-gstack-browser — Launch GStack Browser
 
-Connect Claude to a visible Chrome window with the gstack extension auto-loaded.
-You see every click, every navigation, every action in real time.
+Launch GStack Browser — AI-controlled Chromium with the sidebar extension,
+anti-bot stealth, and custom branding. You see every action in real time.
 
 ## SETUP (run this check BEFORE any browse command)
 
@@ -545,10 +545,11 @@ echo "Pre-flight cleanup done"
 $B connect
 ```
 
-This launches Playwright's bundled Chromium in headed mode with:
+This launches GStack Browser (rebranded Chromium) in headed mode with:
 - A visible window you can watch (not your regular Chrome — it stays untouched)
-- The gstack Chrome extension auto-loaded via `launchPersistentContext`
-- A golden shimmer line at the top of every page so you know which window is controlled
+- The gstack sidebar extension auto-loaded via `launchPersistentContext`
+- Anti-bot stealth patches (sites like Google and NYTimes work without captchas)
+- Custom user agent and GStack Browser branding in Dock/menu bar
 - A sidebar agent process for chat commands
 
 The `connect` command auto-discovers the extension from the gstack install

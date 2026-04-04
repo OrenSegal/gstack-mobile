@@ -21,13 +21,14 @@ function sliceBetween(source: string, startMarker: string, endMarker: string): s
 }
 
 describe('Server auth security', () => {
-  // Test 1: /health response must not leak the auth token
-  test('/health response must not contain token field', () => {
+  // Test 1: /health serves auth token for extension bootstrap (localhost-only, safe)
+  // Previously token was removed from /health, but extension needs it since
+  // .auth.json in the extension dir breaks read-only .app bundles and codesigning.
+  test('/health serves auth token with safety comment', () => {
     const healthBlock = sliceBetween(SERVER_SRC, "url.pathname === '/health'", "url.pathname === '/refs'");
-    // The old pattern was: token: AUTH_TOKEN
-    // The new pattern should have a comment indicating token was removed
-    expect(healthBlock).not.toContain('token: AUTH_TOKEN');
-    expect(healthBlock).toContain('token removed');
+    expect(healthBlock).toContain('token: AUTH_TOKEN');
+    // Must have a comment explaining why this is safe
+    expect(healthBlock).toContain('localhost-only');
   });
 
   // Test 2: /refs endpoint requires auth via validateAuth

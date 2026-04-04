@@ -30,7 +30,8 @@ function getGitRoot(): string | null {
   try {
     const { execSync } = require('child_process');
     return execSync('git rev-parse --show-toplevel', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-  } catch {
+  } catch (err: any) {
+    console.debug('[sidebar-agent] Not in a git repo:', err.message);
     return null;
   }
 }
@@ -74,7 +75,8 @@ async function refreshToken(): Promise<string | null> {
     const data = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
     authToken = data.token || null;
     return authToken;
-  } catch {
+  } catch (err: any) {
+    console.error('[sidebar-agent] Failed to refresh auth token:', err.message);
     return null;
   }
 }
@@ -165,7 +167,11 @@ function describeToolCall(tool: string, input: any): string {
     return short.length > 100 ? short.slice(0, 100) + '…' : short;
   }
 
-  if (tool === 'Read' && input.file_path) return `Reading ${shorten(input.file_path)}`;
+  if (tool === 'Read' && input.file_path) {
+    // Skip Claude's internal tool-result file reads — they're plumbing, not user-facing
+    if (input.file_path.includes('/tool-results/') || input.file_path.includes('/.claude/projects/')) return '';
+    return `Reading ${shorten(input.file_path)}`;
+  }
   if (tool === 'Edit' && input.file_path) return `Editing ${shorten(input.file_path)}`;
   if (tool === 'Write' && input.file_path) return `Writing ${shorten(input.file_path)}`;
   if (tool === 'Grep' && input.pattern) return `Searching for "${input.pattern}"`;
@@ -234,7 +240,10 @@ async function askClaude(queueEntry: any): Promise<void> {
 
     // Validate cwd exists — queue may reference a stale worktree
     let effectiveCwd = cwd || process.cwd();
-    try { fs.accessSync(effectiveCwd); } catch { effectiveCwd = process.cwd(); }
+    try { fs.accessSync(effectiveCwd); } catch (err: any) {
+      console.warn('[sidebar-agent] Worktree path inaccessible, falling back to cwd:', effectiveCwd, err.message);
+      effectiveCwd = process.cwd();
+    }
 
     const proc = spawn('claude', claudeArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -242,6 +251,12 @@ async function askClaude(queueEntry: any): Promise<void> {
       env: {
         ...process.env,
         BROWSE_STATE_FILE: stateFile || '',
+        // Connect to the existing headed browse server, never start a new one.
+        // BROWSE_PORT tells the CLI which port to check.
+        // BROWSE_NO_AUTOSTART prevents spawning an invisible headless browser
+        // if the headed server is down — fail fast with a clear error instead.
+        BROWSE_PORT: process.env.BROWSE_PORT || '34567',
+        BROWSE_NO_AUTOSTART: '1',
         // Pin this agent to its tab — prevents cross-tab interference
         // when multiple agents run simultaneously
         BROWSE_TAB: String(tid),
@@ -258,7 +273,9 @@ async function askClaude(queueEntry: any): Promise<void> {
       buffer = lines.pop() || '';
       for (const line of lines) {
         if (!line.trim()) continue;
-        try { handleStreamEvent(JSON.parse(line), tid); } catch {}
+        try { handleStreamEvent(JSON.parse(line), tid); } catch (err: any) {
+          console.error(`[sidebar-agent] Tab ${tid}: Failed to parse stream line:`, line.slice(0, 100), err.message);
+        }
       }
     });
 
@@ -269,7 +286,9 @@ async function askClaude(queueEntry: any): Promise<void> {
 
     proc.on('close', (code) => {
       if (buffer.trim()) {
-        try { handleStreamEvent(JSON.parse(buffer), tid); } catch {}
+        try { handleStreamEvent(JSON.parse(buffer), tid); } catch (err: any) {
+          console.error(`[sidebar-agent] Tab ${tid}: Failed to parse final buffer:`, buffer.slice(0, 100), err.message);
+        }
       }
       const doneEvent: Record<string, any> = { type: 'agent_done' };
       if (code !== 0 && stderrBuffer.trim()) {
@@ -294,7 +313,9 @@ async function askClaude(queueEntry: any): Promise<void> {
     // Timeout (default 300s / 5 min — multi-page tasks need time)
     const timeoutMs = parseInt(process.env.SIDEBAR_AGENT_TIMEOUT || '300000', 10);
     setTimeout(() => {
-      try { proc.kill(); } catch {}
+      try { proc.kill(); } catch (killErr: any) {
+        console.warn(`[sidebar-agent] Tab ${tid}: Failed to kill timed-out process:`, killErr.message);
+      }
       const timeoutMsg = stderrBuffer.trim()
         ? `Timed out after ${timeoutMs / 1000}s\nstderr: ${stderrBuffer.trim().slice(-500)}`
         : `Timed out after ${timeoutMs / 1000}s`;
@@ -311,14 +332,20 @@ async function askClaude(queueEntry: any): Promise<void> {
 function countLines(): number {
   try {
     return fs.readFileSync(QUEUE, 'utf-8').split('\n').filter(Boolean).length;
-  } catch { return 0; }
+  } catch (err: any) {
+    console.error('[sidebar-agent] Failed to read queue file:', err.message);
+    return 0;
+  }
 }
 
 function readLine(n: number): string | null {
   try {
     const lines = fs.readFileSync(QUEUE, 'utf-8').split('\n').filter(Boolean);
     return lines[n - 1] || null;
-  } catch { return null; }
+  } catch (err: any) {
+    console.error(`[sidebar-agent] Failed to read queue line ${n}:`, err.message);
+    return null;
+  }
 }
 
 async function poll() {
@@ -331,7 +358,10 @@ async function poll() {
     if (!line) continue;
 
     let entry: any;
-    try { entry = JSON.parse(line); } catch { continue; }
+    try { entry = JSON.parse(line); } catch (err: any) {
+      console.warn(`[sidebar-agent] Skipping malformed queue entry at line ${lastLine}:`, line.slice(0, 80), err.message);
+      continue;
+    }
     if (!entry.message && !entry.prompt) continue;
 
     const tid = entry.tabId ?? 0;

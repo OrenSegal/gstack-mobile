@@ -46,6 +46,31 @@ function validateAuth(req: Request): boolean {
   return header === `Bearer ${AUTH_TOKEN}`;
 }
 
+// ─── Sidebar Model Router ────────────────────────────────────────
+// Fast model for navigation/interaction, smart model for reading/analysis.
+// The delta between sonnet and opus on "click @e24" is 5-10x in latency
+// and cost, with zero quality difference. Save opus for when you need it.
+
+const ANALYSIS_WORDS = /\b(what|why|how|explain|describe|summarize|analyze|compare|review|read\b.*\b(and|then)|tell\s*me|find.*bugs?|check.*for|assess|evaluate|report)\b/i;
+const ACTION_PATTERNS = /^(go\s*to|open|navigate|click|tap|press|fill|type|enter|scroll|screenshot|snap|reload|refresh|back|forward|close|submit|select|toggle|expand|collapse|dismiss|accept|upload|download|focus|hover|cleanup|clean\s*up)\b/i;
+const ACTION_ANYWHERE = /\b(go\s*to|click|tap|fill\s*(in|out)?|type\s*in|navigate\s*to|open\s*(the|this|that)?|take\s*a?\s*screenshot|scroll\s*(down|up|to)|reload|refresh|submit|press\s*(the|enter|button))\b/i;
+
+function pickSidebarModel(message: string): string {
+  const msg = message.trim();
+
+  // Analysis/comprehension always gets opus — regardless of action verbs mixed in
+  if (ANALYSIS_WORDS.test(msg)) return 'opus';
+
+  // Short action commands (under ~80 chars, starts with an action verb)
+  if (msg.length < 80 && ACTION_PATTERNS.test(msg)) return 'sonnet';
+
+  // Longer messages that are clearly action-oriented (no analysis words already checked above)
+  if (ACTION_ANYWHERE.test(msg)) return 'sonnet';
+
+  // Everything else: multi-step, ambiguous, or complex
+  return 'opus';
+}
+
 // ─── Help text (auto-generated from COMMAND_DESCRIPTIONS) ────────
 function generateHelpText(): string {
   // Group commands by category
@@ -246,7 +271,9 @@ function addChatEntry(entry: Omit<ChatEntry, 'id'>, tabId?: number): ChatEntry {
   // Persist to disk (best-effort)
   if (sidebarSession) {
     const chatFile = path.join(SESSIONS_DIR, sidebarSession.id, 'chat.jsonl');
-    try { fs.appendFileSync(chatFile, JSON.stringify(full) + '\n'); } catch {}
+    try { fs.appendFileSync(chatFile, JSON.stringify(full) + '\n'); } catch (err: any) {
+      console.error('[browse] Failed to persist chat entry:', err.message);
+    }
   }
   return full;
 }
@@ -271,11 +298,17 @@ function loadSession(): SidebarSession | null {
     const chatFile = path.join(SESSIONS_DIR, session.id, 'chat.jsonl');
     try {
       const lines = fs.readFileSync(chatFile, 'utf-8').split('\n').filter(Boolean);
-      chatBuffer = lines.map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);
+      const parsed = lines.map(line => { try { return JSON.parse(line); } catch { return null; } });
+      const discarded = parsed.filter(x => x === null).length;
+      if (discarded > 0) console.warn(`[browse] Discarding ${discarded} corrupted chat entries during load`);
+      chatBuffer = parsed.filter(Boolean);
       chatNextId = chatBuffer.length > 0 ? Math.max(...chatBuffer.map(e => e.id)) + 1 : 0;
-    } catch {}
+    } catch (err: any) {
+      if (err.code !== 'ENOENT') console.warn('[browse] Chat history not loaded:', err.message);
+    }
     return session;
-  } catch {
+  } catch (err: any) {
+    if (err.code !== 'ENOENT') console.error('[browse] Failed to load session:', err.message);
     return null;
   }
 }
@@ -303,7 +336,9 @@ function createWorktree(sessionId: string): string | null {
       Bun.spawnSync(['git', 'worktree', 'remove', '--force', worktreeDir], {
         cwd: repoRoot, stdout: 'pipe', stderr: 'pipe', timeout: 5000,
       });
-      try { fs.rmSync(worktreeDir, { recursive: true, force: true }); } catch {}
+      try { fs.rmSync(worktreeDir, { recursive: true, force: true }); } catch (err: any) {
+        console.warn('[browse] Failed to clean stale worktree dir:', err.message);
+      }
     }
 
     // Get current branch/commit
@@ -343,8 +378,12 @@ function removeWorktree(worktreePath: string | null): void {
       });
     }
     // Cleanup dir if git worktree remove didn't
-    try { fs.rmSync(worktreePath, { recursive: true, force: true }); } catch {}
-  } catch {}
+    try { fs.rmSync(worktreePath, { recursive: true, force: true }); } catch (err: any) {
+      console.warn('[browse] Failed to remove worktree dir:', worktreePath, err.message);
+    }
+  } catch (err: any) {
+    console.warn('[browse] Worktree removal error:', err.message);
+  }
 }
 
 function createSession(): SidebarSession {
@@ -372,7 +411,9 @@ function saveSession(): void {
   if (!sidebarSession) return;
   sidebarSession.lastActiveAt = new Date().toISOString();
   const sessionFile = path.join(SESSIONS_DIR, sidebarSession.id, 'session.json');
-  try { fs.writeFileSync(sessionFile, JSON.stringify(sidebarSession, null, 2)); } catch {}
+  try { fs.writeFileSync(sessionFile, JSON.stringify(sidebarSession, null, 2)); } catch (err: any) {
+    console.error('[browse] Failed to save session:', err.message);
+  }
 }
 
 function listSessions(): Array<SidebarSession & { chatLines: number }> {
@@ -382,11 +423,16 @@ function listSessions(): Array<SidebarSession & { chatLines: number }> {
       try {
         const session = JSON.parse(fs.readFileSync(path.join(SESSIONS_DIR, d, 'session.json'), 'utf-8'));
         let chatLines = 0;
-        try { chatLines = fs.readFileSync(path.join(SESSIONS_DIR, d, 'chat.jsonl'), 'utf-8').split('\n').filter(Boolean).length; } catch {}
+        try { chatLines = fs.readFileSync(path.join(SESSIONS_DIR, d, 'chat.jsonl'), 'utf-8').split('\n').filter(Boolean).length; } catch {
+          // Expected: no chat file yet
+        }
         return { ...session, chatLines };
       } catch { return null; }
     }).filter(Boolean);
-  } catch { return []; }
+  } catch (err: any) {
+    console.warn('[browse] Failed to list sessions:', err.message);
+    return [];
+  }
 }
 
 function processAgentEvent(event: any): void {
@@ -482,7 +528,14 @@ function spawnClaude(userMessage: string, extensionUrl?: string | null, forTabId
   const prompt = `${systemPrompt}\n\n<user-message>\n${escapedMessage}\n</user-message>`;
   // Never resume — each message is a fresh context. Resuming carries stale
   // page URLs and old navigation state that makes the agent fight the user.
-  const args = ['-p', prompt, '--model', 'opus', '--output-format', 'stream-json', '--verbose',
+
+  // Auto model routing: fast model for navigation/interaction, smart model for reading/analysis.
+  // Navigation, clicking, filling forms, screenshots = deterministic tool calls, no thinking needed.
+  // Reading, summarizing, analyzing, explaining = needs comprehension.
+  const model = pickSidebarModel(userMessage);
+  console.log(`[browse] Sidebar model: ${model} for "${userMessage.slice(0, 60)}"`);
+
+  const args = ['-p', prompt, '--model', model, '--output-format', 'stream-json', '--verbose',
     '--allowedTools', 'Bash,Read,Glob,Grep'];
 
   addChatEntry({ ts: new Date().toISOString(), role: 'agent', type: 'agent_start' });
@@ -521,8 +574,12 @@ function spawnClaude(userMessage: string, extensionUrl?: string | null, forTabId
 
 function killAgent(): void {
   if (agentProcess) {
-    try { agentProcess.kill('SIGTERM'); } catch {}
-    setTimeout(() => { try { agentProcess?.kill('SIGKILL'); } catch {} }, 3000);
+    try { agentProcess.kill('SIGTERM'); } catch (err: any) {
+      console.warn('[browse] Failed to SIGTERM agent:', err.message);
+    }
+    setTimeout(() => { try { agentProcess?.kill('SIGKILL'); } catch (err: any) {
+      console.warn('[browse] Failed to SIGKILL agent:', err.message);
+    } }, 3000);
   }
   agentProcess = null;
   agentStartTime = null;
@@ -600,8 +657,8 @@ async function flushBuffers() {
       fs.appendFileSync(DIALOG_LOG_PATH, lines);
       lastDialogFlushed = dialogBuffer.totalAdded;
     }
-  } catch {
-    // Flush failures are non-fatal — buffers are in memory
+  } catch (err: any) {
+    console.error('[browse] Buffer flush failed:', err.message);
   } finally {
     flushInProgress = false;
   }
@@ -618,6 +675,9 @@ function resetIdleTimer() {
 }
 
 const idleCheckInterval = setInterval(() => {
+  // Headed mode: the user is looking at the browser. Never auto-die.
+  // Only shut down when the user explicitly disconnects or closes the window.
+  if (browserManager.getConnectionMode() === 'headed') return;
   if (Date.now() - lastActivity > IDLE_TIMEOUT_MS) {
     console.log(`[browse] Idle for ${IDLE_TIMEOUT_MS / 1000}s, shutting down`);
     shutdown();
@@ -639,7 +699,9 @@ const inspectorSubscribers = new Set<InspectorSubscriber>();
 function emitInspectorEvent(event: any): void {
   for (const notify of inspectorSubscribers) {
     queueMicrotask(() => {
-      try { notify(event); } catch {}
+      try { notify(event); } catch (err: any) {
+        console.error('[browse] Inspector event subscriber threw:', err.message);
+      }
     });
   }
 }
@@ -725,7 +787,9 @@ async function handleCommand(body: any): Promise<Response> {
   if (tabId !== undefined && tabId !== null) {
     savedTabId = browserManager.getActiveTabId();
     // bringToFront: false — internal tab pinning must NOT steal window focus
-    try { browserManager.switchTab(tabId, { bringToFront: false }); } catch {}
+    try { browserManager.switchTab(tabId, { bringToFront: false }); } catch (err: any) {
+      console.warn('[browse] Failed to pin tab', tabId, ':', err.message);
+    }
   }
 
   // Block mutation commands while watching (read-only observation mode)
@@ -809,7 +873,9 @@ async function handleCommand(body: any): Promise<Response> {
     browserManager.resetFailures();
     // Restore original active tab if we pinned to a specific one
     if (savedTabId !== null) {
-      try { browserManager.switchTab(savedTabId, { bringToFront: false }); } catch {}
+      try { browserManager.switchTab(savedTabId, { bringToFront: false }); } catch (restoreErr: any) {
+        console.warn('[browse] Failed to restore tab after command:', restoreErr.message);
+      }
     }
     return new Response(result, {
       status: 200,
@@ -818,7 +884,9 @@ async function handleCommand(body: any): Promise<Response> {
   } catch (err: any) {
     // Restore original active tab even on error
     if (savedTabId !== null) {
-      try { browserManager.switchTab(savedTabId, { bringToFront: false }); } catch {}
+      try { browserManager.switchTab(savedTabId, { bringToFront: false }); } catch (restoreErr: any) {
+        console.warn('[browse] Failed to restore tab after error:', restoreErr.message);
+      }
     }
 
     // Activity: emit command_end (error)
@@ -850,8 +918,19 @@ async function shutdown() {
   isShuttingDown = true;
 
   console.log('[browse] Shutting down...');
+  // Kill the sidebar-agent daemon process (spawned by cli.ts, detached).
+  // Without this, the agent keeps polling a dead server and spawns confused
+  // claude processes that auto-start headless browsers.
+  try {
+    const { spawnSync } = require('child_process');
+    spawnSync('pkill', ['-f', 'sidebar-agent\\.ts'], { stdio: 'ignore', timeout: 3000 });
+  } catch (err: any) {
+    console.warn('[browse] Failed to kill sidebar-agent:', err.message);
+  }
   // Clean up CDP inspector sessions
-  try { detachSession(); } catch {}
+  try { detachSession(); } catch (err: any) {
+    console.warn('[browse] Failed to detach CDP session:', err.message);
+  }
   inspectorSubscribers.clear();
   // Stop watch mode if active
   if (browserManager.isWatching()) browserManager.stopWatch();
@@ -869,11 +948,15 @@ async function shutdown() {
   // Clean up Chromium profile locks (prevent SingletonLock on next launch)
   const profileDir = path.join(process.env.HOME || '/tmp', '.gstack', 'chromium-profile');
   for (const lockFile of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
-    try { fs.unlinkSync(path.join(profileDir, lockFile)); } catch {}
+    try { fs.unlinkSync(path.join(profileDir, lockFile)); } catch (err: any) {
+      console.debug('[browse] Lock cleanup:', lockFile, err.message);
+    }
   }
 
   // Clean up state file
-  try { fs.unlinkSync(config.stateFile); } catch {}
+  try { fs.unlinkSync(config.stateFile); } catch (err: any) {
+    console.debug('[browse] State file cleanup:', err.message);
+  }
 
   process.exit(0);
 }
@@ -885,7 +968,9 @@ process.on('SIGINT', shutdown);
 // Defense-in-depth — primary cleanup is the CLI's stale-state detection via health check.
 if (process.platform === 'win32') {
   process.on('exit', () => {
-    try { fs.unlinkSync(config.stateFile); } catch {}
+    try { fs.unlinkSync(config.stateFile); } catch {
+      // Best-effort on exit
+    }
   });
 }
 
@@ -894,15 +979,23 @@ function emergencyCleanup() {
   if (isShuttingDown) return;
   isShuttingDown = true;
   // Kill agent subprocess if running
-  try { killAgent(); } catch {}
+  try { killAgent(); } catch (err: any) {
+    console.error('[browse] Emergency: failed to kill agent:', err.message);
+  }
   // Save session state so chat history persists across crashes
-  try { saveSession(); } catch {}
+  try { saveSession(); } catch (err: any) {
+    console.error('[browse] Emergency: failed to save session:', err.message);
+  }
   // Clean Chromium profile locks
   const profileDir = path.join(process.env.HOME || '/tmp', '.gstack', 'chromium-profile');
   for (const lockFile of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
-    try { fs.unlinkSync(path.join(profileDir, lockFile)); } catch {}
+    try { fs.unlinkSync(path.join(profileDir, lockFile)); } catch (err: any) {
+      console.debug('[browse] Emergency lock cleanup:', lockFile, err.message);
+    }
   }
-  try { fs.unlinkSync(config.stateFile); } catch {}
+  try { fs.unlinkSync(config.stateFile); } catch (err: any) {
+    console.debug('[browse] Emergency state cleanup:', err.message);
+  }
 }
 process.on('uncaughtException', (err) => {
   console.error('[browse] FATAL uncaught exception:', err.message);
@@ -918,9 +1011,15 @@ process.on('unhandledRejection', (err: any) => {
 // ─── Start ─────────────────────────────────────────────────────
 async function start() {
   // Clear old log files
-  try { fs.unlinkSync(CONSOLE_LOG_PATH); } catch {}
-  try { fs.unlinkSync(NETWORK_LOG_PATH); } catch {}
-  try { fs.unlinkSync(DIALOG_LOG_PATH); } catch {}
+  try { fs.unlinkSync(CONSOLE_LOG_PATH); } catch (err: any) {
+    if (err.code !== 'ENOENT') console.debug('[browse] Log cleanup console:', err.message);
+  }
+  try { fs.unlinkSync(NETWORK_LOG_PATH); } catch (err: any) {
+    if (err.code !== 'ENOENT') console.debug('[browse] Log cleanup network:', err.message);
+  }
+  try { fs.unlinkSync(DIALOG_LOG_PATH); } catch (err: any) {
+    if (err.code !== 'ENOENT') console.debug('[browse] Log cleanup dialog:', err.message);
+  }
 
   const port = await findPort();
 
@@ -949,6 +1048,35 @@ async function start() {
         return handleCookiePickerRoute(url, req, browserManager, AUTH_TOKEN);
       }
 
+      // Welcome page — served when GStack Browser launches in headed mode
+      if (url.pathname === '/welcome') {
+        const welcomePath = (() => {
+          // Check project-local designs first, then global
+          const slug = process.env.GSTACK_SLUG || 'unknown';
+          const projectWelcome = `${process.env.HOME}/.gstack/projects/${slug}/designs/welcome-page-20260331/finalized.html`;
+          try { if (require('fs').existsSync(projectWelcome)) return projectWelcome; } catch (err: any) {
+            console.warn('[browse] Error checking project welcome page:', err.message);
+          }
+          // Fallback: built-in welcome page from gstack install
+          const skillRoot = process.env.GSTACK_SKILL_ROOT || `${process.env.HOME}/.claude/skills/gstack`;
+          const builtinWelcome = `${skillRoot}/browse/src/welcome.html`;
+          try { if (require('fs').existsSync(builtinWelcome)) return builtinWelcome; } catch (err: any) {
+            console.warn('[browse] Error checking builtin welcome page:', err.message);
+          }
+          return null;
+        })();
+        if (welcomePath) {
+          try {
+            const html = require('fs').readFileSync(welcomePath, 'utf-8');
+            return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+          } catch (err: any) {
+            console.error('[browse] Failed to read welcome page:', welcomePath, err.message);
+          }
+        }
+        // No welcome page found — redirect to about:blank
+        return new Response('', { status: 302, headers: { 'Location': 'about:blank' } });
+      }
+
       // Health check — no auth required, does NOT reset idle timer
       if (url.pathname === '/health') {
         const healthy = await browserManager.isHealthy();
@@ -958,7 +1086,10 @@ async function start() {
           uptime: Math.floor((Date.now() - startTime) / 1000),
           tabs: browserManager.getTabCount(),
           currentUrl: browserManager.getCurrentUrl(),
-          // token removed — see .auth.json for extension bootstrap
+          // Auth token for extension bootstrap. Safe: /health is localhost-only.
+          // Previously served via .auth.json in extension dir, but that breaks
+          // read-only .app bundles and codesigning. Extension reads token from here.
+          token: AUTH_TOKEN,
           chatEnabled: true,
           agent: {
             status: agentStatus,
@@ -1020,7 +1151,8 @@ async function start() {
             const unsubscribe = subscribe((entry) => {
               try {
                 controller.enqueue(encoder.encode(`event: activity\ndata: ${JSON.stringify(entry)}\n\n`));
-              } catch {
+              } catch (err: any) {
+                console.debug('[browse] Activity SSE stream error, unsubscribing:', err.message);
                 unsubscribe();
               }
             });
@@ -1029,7 +1161,8 @@ async function start() {
             const heartbeat = setInterval(() => {
               try {
                 controller.enqueue(encoder.encode(`: heartbeat\n\n`));
-              } catch {
+              } catch (err: any) {
+                console.debug('[browse] Activity SSE heartbeat failed:', err.message);
                 clearInterval(heartbeat);
                 unsubscribe();
               }
@@ -1039,7 +1172,9 @@ async function start() {
             req.signal.addEventListener('abort', () => {
               clearInterval(heartbeat);
               unsubscribe();
-              try { controller.close(); } catch {}
+              try { controller.close(); } catch {
+                // Expected: stream already closed
+              }
             });
           },
         });
@@ -1142,6 +1277,7 @@ async function start() {
         if (!validateAuth(req)) {
           return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
         }
+        resetIdleTimer(); // Sidebar chat is real user activity
         const body = await req.json();
         const msg = body.message?.trim();
         if (!msg) {
@@ -1188,7 +1324,9 @@ async function start() {
         chatBuffer = [];
         chatNextId = 0;
         if (sidebarSession) {
-          try { fs.writeFileSync(path.join(SESSIONS_DIR, sidebarSession.id, 'chat.jsonl'), ''); } catch {}
+          try { fs.writeFileSync(path.join(SESSIONS_DIR, sidebarSession.id, 'chat.jsonl'), ''); } catch (err: any) {
+            console.error('[browse] Failed to clear chat file:', err.message);
+          }
         }
         return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
@@ -1429,7 +1567,8 @@ async function start() {
                 controller.enqueue(encoder.encode(
                   `event: inspector\ndata: ${JSON.stringify(event)}\n\n`
                 ));
-              } catch {
+              } catch (err: any) {
+                console.debug('[browse] Inspector SSE stream error:', err.message);
                 inspectorSubscribers.delete(notify);
               }
             };
@@ -1439,7 +1578,8 @@ async function start() {
             const heartbeat = setInterval(() => {
               try {
                 controller.enqueue(encoder.encode(`: heartbeat\n\n`));
-              } catch {
+              } catch (err: any) {
+                console.debug('[browse] Inspector SSE heartbeat failed:', err.message);
                 clearInterval(heartbeat);
                 inspectorSubscribers.delete(notify);
               }
@@ -1449,7 +1589,9 @@ async function start() {
             req.signal.addEventListener('abort', () => {
               clearInterval(heartbeat);
               inspectorSubscribers.delete(notify);
-              try { controller.close(); } catch {}
+              try { controller.close(); } catch (err: any) {
+                // Expected: stream already closed
+              }
             });
           },
         });
@@ -1491,6 +1633,21 @@ async function start() {
 
   browserManager.serverPort = port;
 
+  // Navigate to welcome page if in headed mode and still on about:blank
+  if (browserManager.getConnectionMode() === 'headed') {
+    try {
+      const currentUrl = browserManager.getCurrentUrl();
+      if (currentUrl === 'about:blank' || currentUrl === '') {
+        const page = browserManager.getPage();
+        page.goto(`http://127.0.0.1:${port}/welcome`, { timeout: 3000 }).catch((err: any) => {
+          console.warn('[browse] Failed to navigate to welcome page:', err.message);
+        });
+      }
+    } catch (err: any) {
+      console.warn('[browse] Welcome page navigation setup failed:', err.message);
+    }
+  }
+
   // Clean up stale state files (older than 7 days)
   try {
     const stateDir = path.join(config.stateDir, 'browse-states');
@@ -1505,7 +1662,9 @@ async function start() {
         }
       }
     }
-  } catch {}
+  } catch (err: any) {
+    console.warn('[browse] Failed to clean stale state files:', err.message);
+  }
 
   console.log(`[browse] Server running on http://127.0.0.1:${port} (PID: ${process.pid})`);
   console.log(`[browse] State file: ${config.stateFile}`);
