@@ -94,7 +94,7 @@ Parse each JSONL entry. Each skill logs different fields:
   → Findings: "{issues_found} issues, {critical_gaps} critical gaps"
 - **plan-design-review**: \\\`status\\\`, \\\`initial_score\\\`, \\\`overall_score\\\`, \\\`unresolved\\\`, \\\`decisions_made\\\`, \\\`commit\\\`
   → Findings: "score: {initial_score}/10 → {overall_score}/10, {decisions_made} decisions"
-- **plan-devex-review**: \\\`status\\\`, \\\`initial_score\\\`, \\\`overall_score\\\`, \\\`product_type\\\`, \\\`tthw_current\\\`, \\\`tthw_target\\\`, \\\`unresolved\\\`, \\\`commit\\\`
+- **plan-devex-review**: \\\`status\\\`, \\\`initial_score\\\`, \\\`overall_score\\\`, \\\`product_type\\\`, \\\`tthw_current\\\`, \\\`tthw_target\\\`, \\\`mode\\\`, \\\`persona\\\`, \\\`competitive_tier\\\`, \\\`unresolved\\\`, \\\`commit\\\`
   → Findings: "score: {initial_score}/10 → {overall_score}/10, TTHW: {tthw_current} → {tthw_target}"
 - **devex-review**: \\\`status\\\`, \\\`overall_score\\\`, \\\`product_type\\\`, \\\`tthw_measured\\\`, \\\`dimensions_tested\\\`, \\\`dimensions_inferred\\\`, \\\`boomerang\\\`, \\\`commit\\\`
   → Findings: "score: {overall_score}/10, TTHW: {tthw_measured}, {dimensions_tested} tested/{dimensions_inferred} inferred"

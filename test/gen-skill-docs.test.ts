@@ -988,6 +988,18 @@ describe('Plan status footer in preamble', () => {
   });
 });
 
+// --- Skill invocation during plan mode in preamble ---
+
+describe('Skill invocation during plan mode in preamble', () => {
+  test('preamble contains skill invocation plan mode section', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'office-hours', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('Skill Invocation During Plan Mode');
+    expect(content).toContain('precedence over generic plan mode behavior');
+    expect(content).toContain('Do not continue the workflow');
+    expect(content).toContain('cancel the skill or leave plan mode');
+  });
+});
+
 // --- {{SPEC_REVIEW_LOOP}} resolver tests ---
 
 describe('SPEC_REVIEW_LOOP resolver', () => {
