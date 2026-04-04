@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.15.4.0] - 2026-04-03 — Autoplan DX Integration + Docs
+
+`/autoplan` now auto-detects developer-facing plans and runs `/plan-devex-review` as Phase 3.5, with full dual-voice adversarial review (Claude subagent + Codex). If your plan mentions APIs, CLIs, SDKs, agent actions, or anything developers integrate with, the DX review kicks in automatically. No extra commands needed.
+
+### Added
+
+- **DX review in /autoplan.** Phase 3.5 runs after Eng review when developer-facing scope is detected. Includes DX-specific dual voices, consensus table, and full 8-dimension scorecard. Triggers on APIs, CLIs, SDKs, shell commands, Claude Code skills, OpenClaw actions, MCP servers, and anything devs implement or debug.
+- **"Which review?" comparison table in README.** Quick reference showing which review to use for end users vs developers vs architecture, and when `/autoplan` covers all three.
+- **`/plan-devex-review` and `/devex-review` in install instructions.** Both skills now listed in the copy-paste install prompt so new users discover them immediately.
+
+### Changed
+
+- **Autoplan pipeline order.** Now CEO → Design → Eng → DX (was CEO → Design → Eng). DX runs last because it benefits from knowing the architecture.
+
 ## [0.15.3.0] - 2026-04-03 — Developer Experience Review
 
 You can now review plans for DX quality before writing code. `/plan-devex-review` rates 8 dimensions (getting started, API design, error messages, docs, upgrade path, dev environment, community, measurement) on a 0-10 scale with trend tracking across reviews. After shipping, `/devex-review` uses the browse tool to actually test the live experience and compare against plan-stage scores.
