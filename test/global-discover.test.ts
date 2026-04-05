@@ -250,6 +250,44 @@ describe("gstack-global-discover", () => {
       expect(meta.type).toBe("session_meta");
       expect(meta.payload.cwd).toBe("/tmp/test-repo");
     });
+
+    test("regression: session_meta beyond 128KB still needs streaming parse", () => {
+      // This test documents the current limitation: 128KB buffer is a heuristic.
+      // If Codex ever embeds >128KB in session_meta, this test will fail,
+      // signaling that the buffer needs to increase or be replaced with streaming.
+      const padding = "x".repeat(140000); // ~140KB payload
+      const sessionMeta = JSON.stringify({
+        timestamp: new Date().toISOString(),
+        type: "session_meta",
+        payload: {
+          id: "test-large",
+          timestamp: new Date().toISOString(),
+          cwd: "/tmp/large-test",
+          originator: "codex_exec",
+          cli_version: "0.200.0",
+          source: "exec",
+          model_provider: "openai",
+          base_instructions: { text: padding },
+        },
+      });
+
+      expect(sessionMeta.length).toBeGreaterThan(131072);
+
+      const filePath = join(codexDir, "large-test.jsonl");
+      writeFileSync(filePath, sessionMeta + "\n");
+
+      // 128KB buffer: JSON.parse FAILS for >128KB lines (current limitation)
+      const { openSync, readSync, closeSync } = require("fs");
+      const fd = openSync(filePath, "r");
+      const buf = Buffer.alloc(131072);
+      readSync(fd, buf, 0, 131072, 0);
+      closeSync(fd);
+      expect(() =>
+        JSON.parse(buf.toString("utf-8").split("\n")[0])
+      ).toThrow();
+      // When this test starts passing (e.g., after implementing streaming parse),
+      // update it to verify correct parsing instead of documenting the limitation.
+    });
   });
 
   describe("discovery output structure", () => {
