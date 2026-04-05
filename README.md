@@ -59,85 +59,48 @@ Real files get committed to your repo (not a submodule), so `git clone` just wor
 > git clone https://github.com/garrytan/gstack.git ~/.claude/skills/gstack
 > ```
 
+### OpenClaw
+
+OpenClaw spawns Claude Code sessions via ACP, so every gstack skill just works
+when Claude Code has gstack installed. Paste this to your OpenClaw agent:
+
+> Install gstack: run `git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup` to install gstack for Claude Code. Then add a "Coding Tasks" section to AGENTS.md that says: when spawning Claude Code sessions for coding work, tell the session to use gstack skills. Include these examples — security audit: "Load gstack. Run /cso", code review: "Load gstack. Run /review", QA test a URL: "Load gstack. Run /qa https://...", build a feature end-to-end: "Load gstack. Run /autoplan, implement the plan, then run /ship", plan before building: "Load gstack. Run /office-hours then /autoplan. Save the plan, don't implement."
+
+**After setup, just talk to your OpenClaw agent naturally:**
+
+| You say | What happens |
+|---------|-------------|
+| "Fix the typo in README" | Simple — Claude Code session, no gstack needed |
+| "Run a security audit on this repo" | Spawns Claude Code with `Run /cso` |
+| "Build me a notifications feature" | Spawns Claude Code with /autoplan → implement → /ship |
+| "Help me plan the v2 API redesign" | Spawns Claude Code with /office-hours → /autoplan, saves plan |
+
+See [docs/OPENCLAW.md](docs/OPENCLAW.md) for advanced dispatch routing and
+the gstack-lite/gstack-full prompt templates.
+
 ### Other AI Agents
 
-gstack works on 8 AI coding agents, not just Claude. All 31 skills work across
-every supported agent. Setup auto-detects which agents you have installed, or
-you can target a specific one.
-
-#### Auto-detect (installs for every agent on your machine)
+gstack works on 8 AI coding agents, not just Claude. Setup auto-detects which
+agents you have installed:
 
 ```bash
 git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/gstack
 cd ~/gstack && ./setup
 ```
 
-#### OpenAI Codex CLI
+Or target a specific agent with `./setup --host <name>`:
 
-```bash
-git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/gstack
-cd ~/gstack && ./setup --host codex
-```
-
-Skills install to `~/.codex/skills/gstack-*/`. For repo-local installs, clone
-into `.agents/skills/gstack` instead.
-
-#### OpenCode
-
-```bash
-git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/gstack
-cd ~/gstack && ./setup --host opencode
-```
-
-Skills install to `~/.config/opencode/skills/gstack-*/`.
-
-#### Cursor
-
-```bash
-git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/gstack
-cd ~/gstack && ./setup --host cursor
-```
-
-Skills install to `~/.cursor/skills/gstack-*/`.
-
-#### Factory Droid
-
-```bash
-git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/gstack
-cd ~/gstack && ./setup --host factory
-```
-
-Skills install to `~/.factory/skills/gstack-*/`. Sensitive skills use
-`disable-model-invocation: true` so Droids don't auto-invoke them.
-
-#### OpenClaw
-
-```bash
-git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/gstack
-cd ~/gstack && ./setup --host openclaw
-```
-
-Skills install to `~/.openclaw/skills/gstack-*/`. Tool names are rewritten
-for OpenClaw's tool system (exec, read, write, edit, sessions_spawn).
-
-#### Slate / Kiro
-
-```bash
-./setup --host slate       # Slate (Random Labs)
-./setup --host kiro        # Amazon Kiro
-```
-
-Hook-based safety skills (careful, freeze, guard) use inline safety advisory
-prose on all non-Claude hosts.
+| Agent | Flag | Skills install to |
+|-------|------|-------------------|
+| OpenAI Codex CLI | `--host codex` | `~/.codex/skills/gstack-*/` |
+| OpenCode | `--host opencode` | `~/.config/opencode/skills/gstack-*/` |
+| Cursor | `--host cursor` | `~/.cursor/skills/gstack-*/` |
+| Factory Droid | `--host factory` | `~/.factory/skills/gstack-*/` |
+| Slate | `--host slate` | `~/.slate/skills/gstack-*/` |
+| Kiro | `--host kiro` | `~/.kiro/skills/gstack-*/` |
 
 **Want to add support for another agent?** See [docs/ADDING_A_HOST.md](docs/ADDING_A_HOST.md).
 It's one TypeScript config file, zero code changes.
-
-### Voice input (AquaVoice, Whisper, etc.)
-
-gstack skills have voice-friendly trigger phrases. Say what you want naturally —
-"run a security check", "test the website", "do an engineering review" — and the
-right skill activates. You don't need to remember slash command names or acronyms.
 
 ## See it work
 
@@ -277,6 +240,12 @@ gstack is powerful with one sprint. It is transformative with ten running at onc
 [Conductor](https://conductor.build) runs multiple Claude Code sessions in parallel — each in its own isolated workspace. One session running `/office-hours` on a new idea, another doing `/review` on a PR, a third implementing a feature, a fourth running `/qa` on staging, and six more on other branches. All at the same time. I regularly run 10-15 parallel sprints — that's the practical max right now.
 
 The sprint structure is what makes parallelism work. Without a process, ten agents is ten sources of chaos. With a process — think, plan, build, review, test, ship — each agent knows exactly what to do and when to stop. You manage them the way a CEO manages a team: check in on the decisions that matter, let the rest run.
+
+### Voice input (AquaVoice, Whisper, etc.)
+
+gstack skills have voice-friendly trigger phrases. Say what you want naturally —
+"run a security check", "test the website", "do an engineering review" — and the
+right skill activates. You don't need to remember slash command names or acronyms.
 
 ---
 
