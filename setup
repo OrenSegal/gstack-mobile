@@ -595,6 +595,13 @@ if [ "$INSTALL_CLAUDE" -eq 1 ]; then
     # reads the correct (patched) name: values for symlink naming
     "$SOURCE_GSTACK_DIR/bin/gstack-patch-names" "$SOURCE_GSTACK_DIR" "$SKILL_PREFIX"
     link_claude_skill_dirs "$SOURCE_GSTACK_DIR" "$INSTALL_SKILLS_DIR"
+    # Self-healing: re-run gstack-relink to ensure name: fields and directory
+    # names are consistent with the config. This catches cases where an interrupted
+    # setup, stale git state, or gen:skill-docs left name: fields out of sync.
+    GSTACK_RELINK="$SOURCE_GSTACK_DIR/bin/gstack-relink"
+    if [ -x "$GSTACK_RELINK" ]; then
+      GSTACK_SKILLS_DIR="$INSTALL_SKILLS_DIR" GSTACK_INSTALL_DIR="$SOURCE_GSTACK_DIR" "$GSTACK_RELINK" >/dev/null 2>&1 || true
+    fi
     # Backwards-compat alias: /connect-chrome → /open-gstack-browser
     _OGB_LINK="$INSTALL_SKILLS_DIR/connect-chrome"
     if [ "$SKILL_PREFIX" -eq 1 ]; then

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.15.6.1] - 2026-04-04
+
+### Fixed
+
+- **Skill prefix self-healing.** Setup now runs `gstack-relink` as a final consistency check after linking skills. If an interrupted setup, stale git state, or upgrade left your `name:` fields out of sync with `skill_prefix: false`, setup will auto-correct on the next run. No more `/gstack-qa` when you wanted `/qa`.
+
 ## [0.15.6.0] - 2026-04-04 — Declarative Multi-Host Platform
 
 Adding a new coding agent to gstack used to mean touching 9 files and knowing the internals of `gen-skill-docs.ts`. Now it's one TypeScript config file and a re-export. Zero code changes elsewhere. Tests auto-parameterize.
