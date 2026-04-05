@@ -22,13 +22,13 @@ function sliceBetween(source: string, startMarker: string, endMarker: string): s
 
 describe('Server auth security', () => {
   // Test 1: /health serves auth token for extension bootstrap (localhost-only, safe)
-  // Previously token was removed from /health, but extension needs it since
-  // .auth.json in the extension dir breaks read-only .app bundles and codesigning.
-  test('/health serves auth token with safety comment', () => {
+  // Token is gated on chrome-extension:// Origin header to prevent leaking
+  // when the server is tunneled to the internet.
+  test('/health serves auth token only for chrome extension origin', () => {
     const healthBlock = sliceBetween(SERVER_SRC, "url.pathname === '/health'", "url.pathname === '/refs'");
-    expect(healthBlock).toContain('token: AUTH_TOKEN');
-    // Must have a comment explaining why this is safe
-    expect(healthBlock).toContain('localhost-only');
+    expect(healthBlock).toContain('AUTH_TOKEN');
+    // Must be gated on chrome-extension Origin
+    expect(healthBlock).toContain('chrome-extension://');
   });
 
   // Test 2: /refs endpoint requires auth via validateAuth

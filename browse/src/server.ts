@@ -398,10 +398,10 @@ function createSession(): SidebarSession {
     lastActiveAt: new Date().toISOString(),
   };
   const sessionDir = path.join(SESSIONS_DIR, id);
-  fs.mkdirSync(sessionDir, { recursive: true });
-  fs.writeFileSync(path.join(sessionDir, 'session.json'), JSON.stringify(session, null, 2));
-  fs.writeFileSync(path.join(sessionDir, 'chat.jsonl'), '');
-  fs.writeFileSync(path.join(SESSIONS_DIR, 'active.json'), JSON.stringify({ id }));
+  fs.mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(sessionDir, 'session.json'), JSON.stringify(session, null, 2), { mode: 0o600 });
+  fs.writeFileSync(path.join(sessionDir, 'chat.jsonl'), '', { mode: 0o600 });
+  fs.writeFileSync(path.join(SESSIONS_DIR, 'active.json'), JSON.stringify({ id }), { mode: 0o600 });
   chatBuffer = [];
   chatNextId = 0;
   return session;
@@ -411,7 +411,7 @@ function saveSession(): void {
   if (!sidebarSession) return;
   sidebarSession.lastActiveAt = new Date().toISOString();
   const sessionFile = path.join(SESSIONS_DIR, sidebarSession.id, 'session.json');
-  try { fs.writeFileSync(sessionFile, JSON.stringify(sidebarSession, null, 2)); } catch (err: any) {
+  try { fs.writeFileSync(sessionFile, JSON.stringify(sidebarSession, null, 2), { mode: 0o600 }); } catch (err: any) {
     console.error('[browse] Failed to save session:', err.message);
   }
 }
@@ -558,7 +558,7 @@ function spawnClaude(userMessage: string, extensionUrl?: string | null, forTabId
     tabId: agentTabId,
   });
   try {
-    fs.mkdirSync(gstackDir, { recursive: true });
+    fs.mkdirSync(gstackDir, { recursive: true, mode: 0o700 });
     fs.appendFileSync(agentQueue, entry + '\n');
   } catch (err: any) {
     addChatEntry({ ts: new Date().toISOString(), role: 'agent', type: 'agent_error', error: `Failed to queue: ${err.message}` });
@@ -585,6 +585,13 @@ function killAgent(): void {
   agentStartTime = null;
   currentMessage = null;
   agentStatus = 'idle';
+
+  // Signal sidebar-agent.ts to kill its active claude subprocess.
+  // sidebar-agent runs in a separate non-compiled Bun process (posix_spawn
+  // limitation). It polls the kill-signal file and terminates on any write.
+  const agentQueue = process.env.SIDEBAR_QUEUE_PATH || path.join(process.env.HOME || '/tmp', '.gstack', 'sidebar-agent-queue.jsonl');
+  const killFile = path.join(path.dirname(agentQueue), 'sidebar-agent-kill');
+  try { fs.writeFileSync(killFile, String(Date.now())); } catch {}
 }
 
 // Agent health check — detect hung processes
@@ -607,7 +614,7 @@ function startAgentHealthCheck(): void {
 
 // Initialize session on startup
 function initSidebarSession(): void {
-  fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+  fs.mkdirSync(SESSIONS_DIR, { recursive: true, mode: 0o700 });
   sidebarSession = loadSession();
   if (!sidebarSession) {
     sidebarSession = createSession();
@@ -1086,10 +1093,11 @@ async function start() {
           uptime: Math.floor((Date.now() - startTime) / 1000),
           tabs: browserManager.getTabCount(),
           currentUrl: browserManager.getCurrentUrl(),
-          // Auth token for extension bootstrap. Safe: /health is localhost-only.
-          // Previously served via .auth.json in extension dir, but that breaks
-          // read-only .app bundles and codesigning. Extension reads token from here.
-          token: AUTH_TOKEN,
+          // Auth token for extension bootstrap. Only returned when the request
+          // comes from a Chrome extension (Origin: chrome-extension://...).
+          // Previously served unconditionally, but that leaks the token if the
+          // server is tunneled to the internet (ngrok, SSH tunnel).
+          ...(req.headers.get('origin')?.startsWith('chrome-extension://') ? { token: AUTH_TOKEN } : {}),
           chatEnabled: true,
           agent: {
             status: agentStatus,
@@ -1222,12 +1230,12 @@ async function start() {
           const tabs = await browserManager.getTabListWithTitles();
           return new Response(JSON.stringify({ tabs }), {
             status: 200,
-            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': 'http://127.0.0.1' },
           });
         } catch (err: any) {
           return new Response(JSON.stringify({ tabs: [], error: err.message }), {
             status: 200,
-            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': 'http://127.0.0.1' },
           });
         }
       }
@@ -1246,7 +1254,7 @@ async function start() {
           browserManager.switchTab(tabId);
           return new Response(JSON.stringify({ ok: true, activeTab: tabId }), {
             status: 200,
-            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': 'http://127.0.0.1' },
           });
         } catch (err: any) {
           return new Response(JSON.stringify({ error: err.message }), { status: 400, headers: { 'Content-Type': 'application/json' } });
@@ -1268,7 +1276,7 @@ async function start() {
         const tabAgentStatus = tabId !== null ? getTabAgentStatus(tabId) : agentStatus;
         return new Response(JSON.stringify({ entries, total: chatNextId, agentStatus: tabAgentStatus, activeTabId: activeTab }), {
           status: 200,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': 'http://127.0.0.1' },
         });
       }
 
@@ -1324,7 +1332,7 @@ async function start() {
         chatBuffer = [];
         chatNextId = 0;
         if (sidebarSession) {
-          try { fs.writeFileSync(path.join(SESSIONS_DIR, sidebarSession.id, 'chat.jsonl'), ''); } catch (err: any) {
+          try { fs.writeFileSync(path.join(SESSIONS_DIR, sidebarSession.id, 'chat.jsonl'), '', { mode: 0o600 }); } catch (err: any) {
             console.error('[browse] Failed to clear chat file:', err.message);
           }
         }
@@ -1549,8 +1557,14 @@ async function start() {
         });
       }
 
-      // GET /inspector/events — SSE for inspector state changes
+      // GET /inspector/events — SSE for inspector state changes (auth required)
       if (url.pathname === '/inspector/events' && req.method === 'GET') {
+        const streamToken = url.searchParams.get('token');
+        if (!validateAuth(req) && streamToken !== AUTH_TOKEN) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401, headers: { 'Content-Type': 'application/json' },
+          });
+        }
         const encoder = new TextEncoder();
         const stream = new ReadableStream({
           start(controller) {
@@ -1680,8 +1694,8 @@ start().catch((err) => {
   // stderr because the server is launched with detached: true, stdio: 'ignore'.
   try {
     const errorLogPath = path.join(config.stateDir, 'browse-startup-error.log');
-    fs.mkdirSync(config.stateDir, { recursive: true });
-    fs.writeFileSync(errorLogPath, `${new Date().toISOString()} ${err.message}\n${err.stack || ''}\n`);
+    fs.mkdirSync(config.stateDir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(errorLogPath, `${new Date().toISOString()} ${err.message}\n${err.stack || ''}\n`, { mode: 0o600 });
   } catch {
     // stateDir may not exist — nothing more we can do
   }

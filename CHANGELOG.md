@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.15.7.0] - 2026-04-05 — Security Wave 1
+
+Fourteen fixes for the security audit (#783). Design server no longer binds all interfaces. Path traversal, auth bypass, CORS wildcard, world-readable files, prompt injection, and symlink race conditions all closed. Community PRs from @Gonzih and @garagon included.
+
+### Fixed
+
+- **Design server binds localhost only.** Previously bound 0.0.0.0, meaning anyone on your WiFi could access mockups and hit all endpoints. Now 127.0.0.1 only, matching the browse server.
+- **Path traversal on /api/reload blocked.** Could previously read any file on disk (including ~/.ssh/id_rsa) by passing an arbitrary path in the JSON body. Now validates paths stay within cwd or tmpdir.
+- **Auth gate on /inspector/events.** SSE endpoint was unauthenticated while /activity/stream required tokens. Now both require the same Bearer or ?token= check.
+- **Prompt injection defense in design feedback.** User feedback is now wrapped in XML trust boundary markers with tag escaping. Accumulated feedback capped to last 5 iterations to limit poisoning.
+- **File and directory permissions hardened.** All ~/.gstack/ dirs now created with mode 0o700, files with 0o600. Setup script sets umask 077. Auth tokens, chat history, and browser logs no longer world-readable.
+- **TOCTOU race in setup symlink creation.** Removed existence check before mkdir -p (idempotent). Validates target isn't a symlink before creating the link.
+- **CORS wildcard removed.** Browse server no longer sends Access-Control-Allow-Origin: *. Chrome extension uses manifest host_permissions and isn't affected. Blocks malicious websites from making cross-origin requests.
+- **Cookie picker auth mandatory.** Previously skipped auth when authToken was undefined. Now always requires Bearer token for all data/action routes.
+- **/health token gated on extension Origin.** Auth token only returned when request comes from chrome-extension:// origin. Prevents token leak when browse server is tunneled.
+- **DNS rebinding protection checks IPv6.** AAAA records now validated alongside A records. Blocks fe80:: link-local addresses.
+- **Symlink bypass in validateOutputPath.** Real path resolved after lexical validation to catch symlinks inside safe directories.
+- **URL validation on restoreState.** Saved URLs validated before navigation to prevent state file tampering.
+- **Telemetry endpoint uses anon key.** Service role key (bypasses RLS) replaced with anon key for the public telemetry endpoint.
+- **killAgent actually kills subprocess.** Cross-process kill signaling via kill-file + polling.
+
 ## [0.15.6.2] - 2026-04-04 — Anti-Skip Review Rule
 
 Review skills now enforce that every section gets evaluated, regardless of plan type. No more "this is a strategy doc so implementation sections don't apply." If a section genuinely has nothing to flag, say so and move on, but you have to look.

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # gstack setup — build browser binary + register skills with Claude Code / Codex
 set -e
+umask 077  # Restrict new files to owner-only (0o600 files, 0o700 dirs)
 
 if ! command -v bun >/dev/null 2>&1; then
   echo "Error: bun is required but not installed." >&2
@@ -295,11 +296,12 @@ link_claude_skill_dirs() {
         rm -f "$target"
       fi
       # Create real directory with symlinked SKILL.md (absolute path)
-      if [ ! -e "$target" ] || [ -d "$target" ]; then
-        mkdir -p "$target"
-        ln -snf "$gstack_dir/$dir_name/SKILL.md" "$target/SKILL.md"
-        linked+=("$link_name")
-      fi
+      # Use mkdir -p unconditionally (idempotent) to avoid TOCTOU race
+      mkdir -p "$target"
+      # Validate target isn't a symlink before creating the link
+      if [ -L "$target/SKILL.md" ]; then rm "$target/SKILL.md"; fi
+      ln -snf "$gstack_dir/$dir_name/SKILL.md" "$target/SKILL.md"
+      linked+=("$link_name")
     fi
   done
   if [ ${#linked[@]} -gt 0 ]; then
