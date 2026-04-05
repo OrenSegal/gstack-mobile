@@ -488,13 +488,9 @@ describe('host config correctness', () => {
     expect(openclaw.staticFiles).toBeUndefined();
   });
 
-  test('openclaw has includeSkills for native methodology skills', () => {
+  test('openclaw includeSkills is empty (native skills replaced generated ones)', () => {
     expect(openclaw.generation.includeSkills).toBeDefined();
-    expect(openclaw.generation.includeSkills).toContain('office-hours');
-    expect(openclaw.generation.includeSkills).toContain('plan-ceo-review');
-    expect(openclaw.generation.includeSkills).toContain('investigate');
-    expect(openclaw.generation.includeSkills).toContain('retro');
-    expect(openclaw.generation.includeSkills!.length).toBe(4);
+    expect(openclaw.generation.includeSkills!.length).toBe(0);
   });
 
   test('every host has coAuthorTrailer or undefined', () => {

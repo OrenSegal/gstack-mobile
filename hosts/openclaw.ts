@@ -23,7 +23,7 @@ const openclaw: HostConfig = {
   generation: {
     generateMetadata: false,
     skipSkills: ['codex'],
-    includeSkills: ['office-hours', 'plan-ceo-review', 'investigate', 'retro'],
+    includeSkills: [],
   },
 
   pathRewrites: [
