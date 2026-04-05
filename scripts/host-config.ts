@@ -62,6 +62,8 @@ export interface HostConfig {
     metadataFormat?: string | null;
     /** Skill directories to exclude from generation for this host. */
     skipSkills?: string[];
+    /** Skill directories to include (allowlist). Union logic: include minus skip. */
+    includeSkills?: string[];
   };
 
   // --- Content Rewrites ---

@@ -484,9 +484,17 @@ describe('host config correctness', () => {
     expect(openclaw.adapter).toContain('openclaw-adapter');
   });
 
-  test('openclaw has staticFiles for SOUL.md', () => {
-    expect(openclaw.staticFiles).toBeDefined();
-    expect(openclaw.staticFiles!['SOUL.md']).toBeDefined();
+  test('openclaw has no staticFiles (SOUL.md removed)', () => {
+    expect(openclaw.staticFiles).toBeUndefined();
+  });
+
+  test('openclaw has includeSkills for native methodology skills', () => {
+    expect(openclaw.generation.includeSkills).toBeDefined();
+    expect(openclaw.generation.includeSkills).toContain('office-hours');
+    expect(openclaw.generation.includeSkills).toContain('plan-ceo-review');
+    expect(openclaw.generation.includeSkills).toContain('investigate');
+    expect(openclaw.generation.includeSkills).toContain('retro');
+    expect(openclaw.generation.includeSkills!.length).toBe(4);
   });
 
   test('every host has coAuthorTrailer or undefined', () => {

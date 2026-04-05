@@ -46,7 +46,19 @@ done
 
 case "$HOST" in
   claude|codex|kiro|factory|auto) ;;
-  *) echo "Unknown --host value: $HOST (expected claude, codex, kiro, factory, or auto)" >&2; exit 1 ;;
+  openclaw)
+    echo ""
+    echo "OpenClaw integration uses a different model — OpenClaw spawns Claude Code"
+    echo "sessions natively via ACP. gstack provides methodology artifacts, not a"
+    echo "full skill installation."
+    echo ""
+    echo "To integrate gstack with OpenClaw:"
+    echo "  1. Tell your OpenClaw agent: 'install gstack for openclaw'"
+    echo "  2. Or generate artifacts: bun run gen:skill-docs --host openclaw"
+    echo "  3. See docs/OPENCLAW.md for the full architecture"
+    echo ""
+    exit 0 ;;
+  *) echo "Unknown --host value: $HOST (expected claude, codex, kiro, factory, openclaw, or auto)" >&2; exit 1 ;;
 esac
 
 # ─── Resolve skill prefix preference ─────────────────────────

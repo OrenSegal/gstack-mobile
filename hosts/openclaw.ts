@@ -23,6 +23,7 @@ const openclaw: HostConfig = {
   generation: {
     generateMetadata: false,
     skipSkills: ['codex'],
+    includeSkills: ['office-hours', 'plan-ceo-review', 'investigate', 'retro'],
   },
 
   pathRewrites: [
@@ -69,10 +70,6 @@ const openclaw: HostConfig = {
   coAuthorTrailer: 'Co-Authored-By: OpenClaw Agent <agent@openclaw.ai>',
   learningsMode: 'basic',
 
-  // SOUL.md ships as a static file alongside generated skills
-  staticFiles: {
-    'SOUL.md': 'openclaw/SOUL.md',
-  },
   adapter: './scripts/host-adapters/openclaw-adapter',
 };
 
