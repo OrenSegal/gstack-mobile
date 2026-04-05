@@ -28,6 +28,20 @@ STACK=""
 echo "STACK: \${STACK:-unknown}"
 DIFF_LINES=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
 echo "DIFF_LINES: $DIFF_LINES"
+# Detect test framework for specialist test stub generation
+TEST_FW=""
+{ [ -f jest.config.ts ] || [ -f jest.config.js ]; } && TEST_FW="jest"
+[ -f vitest.config.ts ] && TEST_FW="vitest"
+{ [ -f spec/spec_helper.rb ] || [ -f .rspec ]; } && TEST_FW="rspec"
+{ [ -f pytest.ini ] || [ -f conftest.py ]; } && TEST_FW="pytest"
+[ -f go.mod ] && TEST_FW="go-test"
+echo "TEST_FW: \${TEST_FW:-unknown}"
+\`\`\`
+
+### Read specialist hit rates (adaptive gating)
+
+\`\`\`bash
+${ctx.paths.binDir}/gstack-specialist-stats 2>/dev/null || true
 \`\`\`
 
 ### Select specialists
@@ -47,8 +61,18 @@ Based on the scope signals above, select which specialists to dispatch.
 6. **API Contract** — if SCOPE_API=true. Read \`${ctx.paths.skillRoot}/review/specialists/api-contract.md\`
 7. **Design** — if SCOPE_FRONTEND=true. Use the existing design review checklist at \`${ctx.paths.skillRoot}/review/design-checklist.md\`
 
-Note which specialists were selected and which were skipped. Print the selection:
-"Dispatching N specialists: [names]. Skipped: [names] (scope not detected)."`;
+### Adaptive gating
+
+After scope-based selection, apply adaptive gating based on specialist hit rates:
+
+For each conditional specialist that passed scope gating, check the \`gstack-specialist-stats\` output above:
+- If tagged \`[GATE_CANDIDATE]\` (0 findings in 10+ dispatches): skip it. Print: "[specialist] auto-gated (0 findings in N reviews)."
+- If tagged \`[NEVER_GATE]\`: always dispatch regardless of hit rate. Security and data-migration are insurance policy specialists — they should run even when silent.
+
+**Force flags:** If the user's prompt includes \`--security\`, \`--performance\`, \`--testing\`, \`--maintainability\`, \`--data-migration\`, \`--api-contract\`, \`--design\`, or \`--all-specialists\`, force-include that specialist regardless of gating.
+
+Note which specialists were selected, gated, and skipped. Print the selection:
+"Dispatching N specialists: [names]. Skipped: [names] (scope not detected). Gated: [names] (0 findings in N+ reviews)."`;
 }
 
 function generateSpecialistDispatch(ctx: TemplateContext): string {
@@ -81,7 +105,11 @@ For each finding, output a JSON object on its own line:
 {\\"severity\\":\\"CRITICAL|INFORMATIONAL\\",\\"confidence\\":N,\\"path\\":\\"file\\",\\"line\\":N,\\"category\\":\\"category\\",\\"summary\\":\\"description\\",\\"fix\\":\\"recommended fix\\",\\"fingerprint\\":\\"path:line:category\\",\\"specialist\\":\\"name\\"}
 
 Required fields: severity, confidence, path, category, summary, specialist.
-Optional: line, fix, fingerprint, evidence.
+Optional: line, fix, fingerprint, evidence, test_stub.
+
+If you can write a test that would catch this issue, include it in the \`test_stub\` field.
+Use the detected test framework ({TEST_FW}). Write a minimal skeleton — describe/it/test
+blocks with clear intent. Skip test_stub for architectural or design-only findings.
 
 If no findings: output \`NO FINDINGS\` and nothing else.
 Do not output anything else — no preamble, no summary, no commentary.
@@ -146,7 +174,18 @@ PR Quality Score: X/10
 \`\`\`
 
 These findings flow into Step 5 Fix-First alongside the CRITICAL pass findings from Step 4.
-The Fix-First heuristic applies identically — specialist findings follow the same AUTO-FIX vs ASK classification.`;
+The Fix-First heuristic applies identically — specialist findings follow the same AUTO-FIX vs ASK classification.
+
+**Compile per-specialist stats:**
+After merging findings, compile a \`specialists\` object for the review-log entry in Step 5.8.
+For each specialist (testing, maintainability, security, performance, data-migration, api-contract, design, red-team):
+- If dispatched: \`{"dispatched": true, "findings": N, "critical": N, "informational": N}\`
+- If skipped by scope: \`{"dispatched": false, "reason": "scope"}\`
+- If skipped by gating: \`{"dispatched": false, "reason": "gated"}\`
+- If not applicable (e.g., red-team not activated): omit from the object
+
+Include the Design specialist even though it uses \`design-checklist.md\` instead of the specialist schema files.
+Remember these stats — you will need them for the review-log entry in Step 5.8.`;
 }
 
 function generateRedTeam(ctx: TemplateContext): string {
