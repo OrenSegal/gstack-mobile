@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.15.11.0] - 2026-04-05
+
+### Changed
+- `/ship` re-runs now execute every verification step (tests, coverage audit, review, adversarial, TODOS, document-release) regardless of prior runs. Only actions (push, PR creation, VERSION bump) are idempotent. Re-running `/ship` means "run the whole checklist again."
+- `/ship` now runs the full Review Army specialist dispatch (testing, maintainability, security, performance, data-migration, api-contract, design, red-team) during pre-landing review, matching `/review`'s depth.
+
+### Added
+- Cross-review finding dedup in `/ship`: findings the user already skipped in a prior `/review` or `/ship` are automatically suppressed on re-run (unless the relevant code changed).
+- PR body refresh after `/document-release`: the PR body is re-edited to include the docs commit, so it always reflects the truly final state.
+
+### Fixed
+- Review Army diff size heuristic now counts insertions + deletions (was insertions-only, which missed deletion-heavy refactors).
+
+### For contributors
+- Extracted cross-review dedup to shared `{{CROSS_REVIEW_DEDUP}}` resolver (DRY between `/review` and `/ship`).
+- Review Army step numbers adapt per-skill via `ctx.skillName` (ship: 3.55/3.56, review: 4.5/4.6), including prose references.
+- Added 3 regression guard tests for new ship template content.
+
 ## [0.15.10.0] - 2026-04-05 — Native OpenClaw Skills + ClawHub Publishing
 
 Four methodology skills you can install directly in your OpenClaw agent via ClawHub, no Claude Code session needed. Your agent runs them conversationally via Telegram.

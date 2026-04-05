@@ -749,6 +749,22 @@ describe('TEST_COVERAGE_AUDIT placeholders', () => {
       expect(shipSkill).toContain(phrase);
     }
   });
+
+  test('ship SKILL.md contains review army specialist dispatch', () => {
+    expect(shipSkill).toContain('Specialist Dispatch');
+    expect(shipSkill).toContain('Step 3.55');
+    expect(shipSkill).toContain('Step 3.56');
+  });
+
+  test('ship SKILL.md contains cross-review finding dedup', () => {
+    expect(shipSkill).toContain('Cross-review finding dedup');
+    expect(shipSkill).toContain('Step 3.57');
+  });
+
+  test('ship SKILL.md contains re-run idempotency behavior', () => {
+    expect(shipSkill).toContain('Re-run behavior (idempotency)');
+    expect(shipSkill).toContain('Never skip a verification step');
+  });
 });
 
 // --- {{TEST_FAILURE_TRIAGE}} resolver tests ---

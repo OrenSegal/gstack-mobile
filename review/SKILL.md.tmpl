@@ -103,39 +103,7 @@ Follow the output format specified in the checklist. Respect the suppressions �
 
 **Every finding gets action — not just critical ones.**
 
-### Step 5.0: Cross-review finding dedup
-
-Before classifying findings, check if any were previously skipped by the user in a prior review on this branch.
-
-```bash
-~/.claude/skills/gstack/bin/gstack-review-read
-```
-
-Parse the output: only lines BEFORE `---CONFIG---` are JSONL entries (the output also contains `---CONFIG---` and `---HEAD---` footer sections that are not JSONL — ignore those).
-
-For each JSONL entry that has a `findings` array:
-1. Collect all fingerprints where `action: "skipped"`
-2. Note the `commit` field from that entry
-
-If skipped fingerprints exist, get the list of files changed since that review:
-
-```bash
-git diff --name-only <prior-review-commit> HEAD
-```
-
-For each current finding (from both Step 4 critical pass and Step 4.5-4.6 specialists), check:
-- Does its fingerprint match a previously skipped finding?
-- Is the finding's file path NOT in the changed-files set?
-
-If both conditions are true: suppress the finding. It was intentionally skipped and the relevant code hasn't changed.
-
-Print: "Suppressed N findings from prior reviews (previously skipped by user)"
-
-**Only suppress `skipped` findings — never `fixed` or `auto-fixed`** (those might regress and should be re-checked).
-
-If no prior reviews exist or none have a `findings` array, skip this step silently.
-
-Output a summary header: `Pre-Landing Review: N issues (X critical, Y informational)`
+{{CROSS_REVIEW_DEDUP}}
 
 ### Step 5a: Classify each finding
 

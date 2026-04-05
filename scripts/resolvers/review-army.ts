@@ -12,7 +12,11 @@
 import type { TemplateContext } from './types';
 
 function generateSpecialistSelection(ctx: TemplateContext): string {
-  return `## Step 4.5: Review Army — Specialist Dispatch
+  const isShip = ctx.skillName === 'ship';
+  const stepSel = isShip ? '3.55' : '4.5';
+  const stepMerge = isShip ? '3.56' : '4.6';
+  const nextStep = isShip ? 'the Fix-First flow (item 4)' : 'Step 5';
+  return `## Step ${stepSel}: Review Army — Specialist Dispatch
 
 ### Detect stack and scope
 
@@ -26,7 +30,9 @@ STACK=""
 [ -f go.mod ] && STACK="\${STACK}go "
 [ -f Cargo.toml ] && STACK="\${STACK}rust "
 echo "STACK: \${STACK:-unknown}"
-DIFF_LINES=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
+DIFF_INS=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
+DIFF_DEL=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
+DIFF_LINES=$((DIFF_INS + DIFF_DEL))
 echo "DIFF_LINES: $DIFF_LINES"
 # Detect test framework for specialist test stub generation
 TEST_FW=""
@@ -52,7 +58,7 @@ Based on the scope signals above, select which specialists to dispatch.
 1. **Testing** — read \`${ctx.paths.skillRoot}/review/specialists/testing.md\`
 2. **Maintainability** — read \`${ctx.paths.skillRoot}/review/specialists/maintainability.md\`
 
-**If DIFF_LINES < 50:** Skip all specialists. Print: "Small diff ($DIFF_LINES lines) — specialists skipped." Continue to Step 5.
+**If DIFF_LINES < 50:** Skip all specialists. Print: "Small diff ($DIFF_LINES lines) — specialists skipped." Continue to ${nextStep}.
 
 **Conditional (dispatch if the matching scope signal is true):**
 3. **Security** — if SCOPE_AUTH=true, OR if SCOPE_BACKEND=true AND DIFF_LINES > 100. Read \`${ctx.paths.skillRoot}/review/specialists/security.md\`
@@ -126,8 +132,14 @@ CHECKLIST:
 - If any specialist subagent fails or times out, log the failure and continue with results from successful specialists. Specialists are additive — partial results are better than no results.`;
 }
 
-function generateFindingsMerge(_ctx: TemplateContext): string {
-  return `### Step 4.6: Collect and merge findings
+function generateFindingsMerge(ctx: TemplateContext): string {
+  const isShip = ctx.skillName === 'ship';
+  const stepMerge = isShip ? '3.56' : '4.6';
+  const stepSel = isShip ? '3.55' : '4.5';
+  const fixFirstRef = isShip ? 'the Fix-First flow (item 4)' : 'Step 5 Fix-First';
+  const critPassRef = isShip ? 'the checklist pass (Step 3.5)' : 'the CRITICAL pass findings from Step 4';
+  const persistRef = isShip ? 'the review-log persist' : 'the review-log entry in Step 5.8';
+  return `### Step ${stepMerge}: Collect and merge findings
 
 After all specialist subagents complete, collect their outputs.
 
@@ -173,11 +185,11 @@ SPECIALIST REVIEW: N findings (X critical, Y informational) from Z specialists
 PR Quality Score: X/10
 \`\`\`
 
-These findings flow into Step 5 Fix-First alongside the CRITICAL pass findings from Step 4.
+These findings flow into ${fixFirstRef} alongside ${critPassRef}.
 The Fix-First heuristic applies identically — specialist findings follow the same AUTO-FIX vs ASK classification.
 
 **Compile per-specialist stats:**
-After merging findings, compile a \`specialists\` object for the review-log entry in Step 5.8.
+After merging findings, compile a \`specialists\` object for ${persistRef}.
 For each specialist (testing, maintainability, security, performance, data-migration, api-contract, design, red-team):
 - If dispatched: \`{"dispatched": true, "findings": N, "critical": N, "informational": N}\`
 - If skipped by scope: \`{"dispatched": false, "reason": "scope"}\`
@@ -189,6 +201,9 @@ Remember these stats — you will need them for the review-log entry in Step 5.8
 }
 
 function generateRedTeam(ctx: TemplateContext): string {
+  const isShip = ctx.skillName === 'ship';
+  const stepMerge = isShip ? '3.56' : '4.6';
+  const fixFirstRef = isShip ? 'the Fix-First flow (item 4)' : 'Step 5 Fix-First';
   return `### Red Team dispatch (conditional)
 
 **Activation:** Only if DIFF_LINES > 200 OR any specialist produced a CRITICAL finding.
@@ -197,7 +212,7 @@ If activated, dispatch one more subagent via the Agent tool (foreground, not bac
 
 The Red Team subagent receives:
 1. The red-team checklist from \`${ctx.paths.skillRoot}/review/specialists/red-team.md\`
-2. The merged specialist findings from Step 4.6 (so it knows what was already caught)
+2. The merged specialist findings from Step ${stepMerge} (so it knows what was already caught)
 3. The git diff command
 
 Prompt: "You are a red team reviewer. The code has already been reviewed by N specialists
@@ -208,7 +223,7 @@ concerns, integration boundary issues, and failure modes that specialist checkli
 don't cover."
 
 If the Red Team finds additional issues, merge them into the findings list before
-Step 5 Fix-First. Red Team findings are tagged with \`"specialist":"red-team"\`.
+${fixFirstRef}. Red Team findings are tagged with \`"specialist":"red-team"\`.
 
 If the Red Team returns NO FINDINGS, note: "Red Team review: no additional issues found."
 If the Red Team subagent fails or times out, skip silently and continue.`;
