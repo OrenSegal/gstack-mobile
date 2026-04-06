@@ -257,6 +257,69 @@ describe('gstack-team-init', () => {
     const matches = claude.match(/## gstack/g);
     expect(matches).toHaveLength(1);
   });
+
+  test('removes vendored copy when present', () => {
+    // Create a fake vendored gstack with VERSION file
+    const vendoredDir = path.join(tmpDir, '.claude', 'skills', 'gstack');
+    fs.mkdirSync(vendoredDir, { recursive: true });
+    fs.writeFileSync(path.join(vendoredDir, 'VERSION'), '0.14.0.0');
+    fs.writeFileSync(path.join(vendoredDir, 'README.md'), 'vendored');
+    // Track it in git
+    execSync('git add .claude/skills/gstack/', { cwd: tmpDir });
+    execSync('git commit -m "add vendored gstack"', { cwd: tmpDir });
+
+    const result = run(`${TEAM_INIT} optional`, { cwd: tmpDir });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('Found vendored gstack copy');
+    expect(result.stdout).toContain('Removed vendored copy');
+    // Vendored dir should be gone
+    expect(fs.existsSync(vendoredDir)).toBe(false);
+    // .gitignore should have the entry
+    const gitignore = fs.readFileSync(path.join(tmpDir, '.gitignore'), 'utf-8');
+    expect(gitignore).toContain('.claude/skills/gstack/');
+  });
+
+  test('skips when no vendored copy present', () => {
+    const result = run(`${TEAM_INIT} optional`, { cwd: tmpDir });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).not.toContain('Found vendored gstack copy');
+  });
+
+  test('skips when .claude/skills/gstack is a symlink', () => {
+    // Create a symlink (not a real vendored copy)
+    const skillsDir = path.join(tmpDir, '.claude', 'skills');
+    fs.mkdirSync(skillsDir, { recursive: true });
+    const targetDir = mkTmpDir();
+    fs.writeFileSync(path.join(targetDir, 'VERSION'), '0.14.0.0');
+    fs.symlinkSync(targetDir, path.join(skillsDir, 'gstack'));
+
+    const result = run(`${TEAM_INIT} optional`, { cwd: tmpDir });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).not.toContain('Found vendored gstack copy');
+    // Symlink should still exist
+    expect(fs.lstatSync(path.join(skillsDir, 'gstack')).isSymbolicLink()).toBe(true);
+    fs.rmSync(targetDir, { recursive: true, force: true });
+  });
+
+  test('does not duplicate .gitignore entry on re-run', () => {
+    // Create vendored copy
+    const vendoredDir = path.join(tmpDir, '.claude', 'skills', 'gstack');
+    fs.mkdirSync(vendoredDir, { recursive: true });
+    fs.writeFileSync(path.join(vendoredDir, 'VERSION'), '0.14.0.0');
+    execSync('git add .claude/skills/gstack/', { cwd: tmpDir });
+    execSync('git commit -m "add vendored"', { cwd: tmpDir });
+
+    run(`${TEAM_INIT} optional`, { cwd: tmpDir });
+
+    // Re-create vendored dir to simulate re-run scenario
+    fs.mkdirSync(vendoredDir, { recursive: true });
+    fs.writeFileSync(path.join(vendoredDir, 'VERSION'), '0.14.0.0');
+    run(`${TEAM_INIT} optional`, { cwd: tmpDir });
+
+    const gitignore = fs.readFileSync(path.join(tmpDir, '.gitignore'), 'utf-8');
+    const matches = gitignore.match(/\.claude\/skills\/gstack\//g);
+    expect(matches).toHaveLength(1);
+  });
 });
 
 describe('setup --team / --no-team / -q', () => {

@@ -785,6 +785,7 @@ HOOK_CMD="$SOURCE_GSTACK_DIR/bin/gstack-session-update"
 
 if [ "$TEAM_MODE" -eq 1 ]; then
   "$GSTACK_CONFIG" set auto_upgrade true 2>/dev/null || true
+  "$GSTACK_CONFIG" set team_mode true 2>/dev/null || true
 
   # Register SessionStart hook in Claude Code settings
   if [ -x "$SETTINGS_HOOK" ]; then
@@ -802,6 +803,7 @@ fi
 
 if [ "$NO_TEAM_MODE" -eq 1 ]; then
   "$GSTACK_CONFIG" set auto_upgrade false 2>/dev/null || true
+  "$GSTACK_CONFIG" set team_mode false 2>/dev/null || true
 
   # Remove SessionStart hook from Claude Code settings
   if [ -x "$SETTINGS_HOOK" ]; then

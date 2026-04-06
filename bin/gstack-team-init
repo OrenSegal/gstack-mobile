@@ -29,6 +29,26 @@ REPO_ROOT=$(git rev-parse --show-toplevel)
 CLAUDE_MD="$REPO_ROOT/CLAUDE.md"
 GENERATED=()
 
+# ── Migrate vendored copy if present ──────────────────────────
+
+if [ -d "$REPO_ROOT/.claude/skills/gstack" ] && [ ! -L "$REPO_ROOT/.claude/skills/gstack" ]; then
+  if [ -f "$REPO_ROOT/.claude/skills/gstack/VERSION" ] || [ -d "$REPO_ROOT/.claude/skills/gstack/.git" ]; then
+    echo "  Found vendored gstack copy at $REPO_ROOT/.claude/skills/gstack"
+    echo "  Team mode uses the global install — removing vendored copy..."
+    ( cd "$REPO_ROOT" && git rm -r --cached .claude/skills/gstack/ 2>/dev/null ) || true
+    if [ -f "$REPO_ROOT/.gitignore" ]; then
+      if ! grep -qF '.claude/skills/gstack/' "$REPO_ROOT/.gitignore" 2>/dev/null; then
+        echo '.claude/skills/gstack/' >> "$REPO_ROOT/.gitignore"
+      fi
+    else
+      echo '.claude/skills/gstack/' > "$REPO_ROOT/.gitignore"
+    fi
+    rm -rf "$REPO_ROOT/.claude/skills/gstack"
+    GENERATED+=(".gitignore")
+    echo "  Removed vendored copy and added .claude/skills/gstack/ to .gitignore"
+  fi
+fi
+
 # ── CLAUDE.md snippet ──────────────────────────────────────────
 
 if [ "$MODE" = "optional" ]; then
