@@ -259,6 +259,11 @@ export class WorktreeManager {
 
         const entryPath = path.join(worktreeBase, entry);
         try {
+          // Skip recent worktrees (< 1 hour old) to avoid killing
+          // worktrees from concurrent test runs still in progress
+          const stat = fs.statSync(entryPath);
+          const ageMs = Date.now() - stat.mtimeMs;
+          if (ageMs < 3600_000) continue;
           fs.rmSync(entryPath, { recursive: true, force: true });
         } catch { /* non-fatal */ }
       }

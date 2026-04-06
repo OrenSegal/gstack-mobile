@@ -1755,7 +1755,10 @@ describe('Codex generation (--host codex)', () => {
   test('Claude output unchanged: all Claude skills have zero Codex paths', () => {
     for (const skill of ALL_SKILLS) {
       const content = fs.readFileSync(path.join(ROOT, skill.dir, 'SKILL.md'), 'utf-8');
-      expect(content).not.toContain('~/.codex/');
+      // pair-agent legitimately documents how Codex agents store credentials
+      if (skill.dir !== 'pair-agent') {
+        expect(content).not.toContain('~/.codex/');
+      }
       // gstack-upgrade legitimately references .agents/skills for cross-platform detection
       if (skill.dir !== 'gstack-upgrade') {
         expect(content).not.toContain('.agents/skills');

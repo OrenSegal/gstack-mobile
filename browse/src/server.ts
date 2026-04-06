@@ -20,7 +20,18 @@ import { handleMetaCommand } from './meta-commands';
 import { handleCookiePickerRoute } from './cookie-picker-routes';
 import { sanitizeExtensionUrl } from './sidebar-utils';
 import { COMMAND_DESCRIPTIONS, PAGE_CONTENT_COMMANDS, wrapUntrustedContent } from './commands';
+import {
+  wrapUntrustedPageContent, datamarkContent,
+  runContentFilters, type ContentFilterResult,
+  markHiddenElements, getCleanTextWithStripping, cleanupHiddenMarkers,
+} from './content-security';
 import { handleSnapshot, SNAPSHOT_FLAGS } from './snapshot';
+import {
+  initRegistry, validateToken as validateScopedToken, checkScope, checkDomain,
+  checkRate, createToken, createSetupKey, exchangeSetupKey, revokeToken,
+  rotateRoot, listTokens, serializeRegistry, restoreRegistry, recordCommand,
+  isRootToken, checkConnectRateLimit, type TokenInfo,
+} from './token-registry';
 import { resolveConfig, ensureStateDir, readVersionHash } from './config';
 import { emitActivity, subscribe, getActivityAfter, getActivityHistory, getSubscriberCount } from './activity';
 import { inspectElement, modifyStyle, resetModifications, getModificationHistory, detachSession, type InspectorResult } from './cdp-inspector';
@@ -37,13 +48,39 @@ ensureStateDir(config);
 
 // ─── Auth ───────────────────────────────────────────────────────
 const AUTH_TOKEN = crypto.randomUUID();
+initRegistry(AUTH_TOKEN);
 const BROWSE_PORT = parseInt(process.env.BROWSE_PORT || '0', 10);
 const IDLE_TIMEOUT_MS = parseInt(process.env.BROWSE_IDLE_TIMEOUT || '1800000', 10); // 30 min
 // Sidebar chat is always enabled in headed mode (ungated in v0.12.0)
 
+// ─── Tunnel State ───────────────────────────────────────────────
+let tunnelActive = false;
+let tunnelUrl: string | null = null;
+let tunnelListener: any = null; // ngrok listener handle
+
 function validateAuth(req: Request): boolean {
   const header = req.headers.get('authorization');
   return header === `Bearer ${AUTH_TOKEN}`;
+}
+
+/** Extract bearer token from request. Returns the token string or null. */
+function extractToken(req: Request): string | null {
+  const header = req.headers.get('authorization');
+  if (!header?.startsWith('Bearer ')) return null;
+  return header.slice(7);
+}
+
+/** Validate token and return TokenInfo. Returns null if invalid/expired. */
+function getTokenInfo(req: Request): TokenInfo | null {
+  const token = extractToken(req);
+  if (!token) return null;
+  return validateScopedToken(token);
+}
+
+/** Check if request is from root token (local use). */
+function isRootRequest(req: Request): boolean {
+  const token = extractToken(req);
+  return token !== null && isRootToken(token);
 }
 
 // ─── Sidebar Model Router ────────────────────────────────────────
@@ -691,6 +728,8 @@ const idleCheckInterval = setInterval(() => {
   // Headed mode: the user is looking at the browser. Never auto-die.
   // Only shut down when the user explicitly disconnects or closes the window.
   if (browserManager.getConnectionMode() === 'headed') return;
+  // Tunnel mode: remote agents may send commands sporadically. Never auto-die.
+  if (tunnelActive) return;
   if (Date.now() - lastActivity > IDLE_TIMEOUT_MS) {
     console.log(`[browse] Idle for ${IDLE_TIMEOUT_MS / 1000}s, shutting down`);
     shutdown();
@@ -800,14 +839,81 @@ function wrapError(err: any): string {
   return msg;
 }
 
-async function handleCommand(body: any): Promise<Response> {
+/** Internal command result — used by handleCommand and chain subcommand routing */
+interface CommandResult {
+  status: number;
+  result: string;
+  headers?: Record<string, string>;
+  json?: boolean; // true if result is JSON (errors), false for text/plain
+}
+
+/**
+ * Core command execution logic. Returns a structured result instead of HTTP Response.
+ * Used by both the HTTP handler (handleCommand) and chain subcommand routing.
+ *
+ * Options:
+ *   skipRateCheck: true when called from chain (chain counts as 1 request)
+ *   skipActivity: true when called from chain (chain emits 1 event for all subcommands)
+ *   chainDepth: recursion guard — reject nested chains (depth > 0 means inside a chain)
+ */
+async function handleCommandInternal(
+  body: { command: string; args?: string[]; tabId?: number },
+  tokenInfo?: TokenInfo | null,
+  opts?: { skipRateCheck?: boolean; skipActivity?: boolean; chainDepth?: number },
+): Promise<CommandResult> {
   const { command, args = [], tabId } = body;
 
   if (!command) {
-    return new Response(JSON.stringify({ error: 'Missing "command" field' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return { status: 400, result: JSON.stringify({ error: 'Missing "command" field' }), json: true };
+  }
+
+  // ─── Recursion guard: reject nested chains ──────────────────
+  if (command === 'chain' && (opts?.chainDepth ?? 0) > 0) {
+    return { status: 400, result: JSON.stringify({ error: 'Nested chain commands are not allowed' }), json: true };
+  }
+
+  // ─── Scope check (for scoped tokens) ──────────────────────────
+  if (tokenInfo && tokenInfo.clientId !== 'root') {
+    if (!checkScope(tokenInfo, command)) {
+      return {
+        status: 403, json: true,
+        result: JSON.stringify({
+          error: `Command "${command}" not allowed by your token scope`,
+          hint: `Your scopes: ${tokenInfo.scopes.join(', ')}. Ask the user to re-pair with --admin for eval/cookies/storage access.`,
+        }),
+      };
+    }
+
+    // Domain check for navigation commands
+    if ((command === 'goto' || command === 'newtab') && args[0]) {
+      if (!checkDomain(tokenInfo, args[0])) {
+        return {
+          status: 403, json: true,
+          result: JSON.stringify({
+            error: `Domain not allowed by your token scope`,
+            hint: `Allowed domains: ${tokenInfo.domains?.join(', ') || 'none configured'}`,
+          }),
+        };
+      }
+    }
+
+    // Rate check (skipped for chain subcommands — chain counts as 1 request)
+    if (!opts?.skipRateCheck) {
+      const rateResult = checkRate(tokenInfo);
+      if (!rateResult.allowed) {
+        return {
+          status: 429, json: true,
+          result: JSON.stringify({
+            error: 'Rate limit exceeded',
+            hint: `Max ${tokenInfo.rateLimit} requests/second. Retry after ${rateResult.retryAfterMs}ms.`,
+          }),
+          headers: { 'Retry-After': String(Math.ceil((rateResult.retryAfterMs || 1000) / 1000)) },
+        };
+      }
+    }
+
+    // Record command execution for idempotent key exchange tracking
+    if (!opts?.skipRateCheck && tokenInfo.token) recordCommand(tokenInfo.token);
   }
 
   // Pin to a specific tab if requested (set by BROWSE_TAB env var in sidebar agents).
@@ -822,39 +928,90 @@ async function handleCommand(body: any): Promise<Response> {
     }
   }
 
-  // Block mutation commands while watching (read-only observation mode)
-  if (browserManager.isWatching() && WRITE_COMMANDS.has(command)) {
-    return new Response(JSON.stringify({
-      error: 'Cannot run mutation commands while watching. Run `$B watch stop` first.',
-    }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
+  // ─── Tab ownership check (for scoped tokens) ──────────────
+  if (tokenInfo && tokenInfo.clientId !== 'root' && (WRITE_COMMANDS.has(command) || tokenInfo.tabPolicy === 'own-only')) {
+    const targetTab = tabId ?? browserManager.getActiveTabId();
+    if (!browserManager.checkTabAccess(targetTab, tokenInfo.clientId, { isWrite: WRITE_COMMANDS.has(command), ownOnly: tokenInfo.tabPolicy === 'own-only' })) {
+      return {
+        status: 403, json: true,
+        result: JSON.stringify({
+          error: 'Tab not owned by your agent. Use newtab to create your own tab.',
+          hint: `Tab ${targetTab} is owned by ${browserManager.getTabOwner(targetTab) || 'root'}. Your agent: ${tokenInfo.clientId}.`,
+        }),
+      };
+    }
   }
 
-  // Activity: emit command_start
+  // ─── newtab with ownership for scoped tokens ──────────────
+  if (command === 'newtab' && tokenInfo && tokenInfo.clientId !== 'root') {
+    const newId = await browserManager.newTab(args[0] || undefined, tokenInfo.clientId);
+    return {
+      status: 200, json: true,
+      result: JSON.stringify({
+        tabId: newId,
+        owner: tokenInfo.clientId,
+        hint: 'Include "tabId": ' + newId + ' in subsequent commands to target this tab.',
+      }),
+    };
+  }
+
+  // Block mutation commands while watching (read-only observation mode)
+  if (browserManager.isWatching() && WRITE_COMMANDS.has(command)) {
+    return {
+      status: 400, json: true,
+      result: JSON.stringify({ error: 'Cannot run mutation commands while watching. Run `$B watch stop` first.' }),
+    };
+  }
+
+  // Activity: emit command_start (skipped for chain subcommands)
   const startTime = Date.now();
-  emitActivity({
-    type: 'command_start',
-    command,
-    args,
-    url: browserManager.getCurrentUrl(),
-    tabs: browserManager.getTabCount(),
-    mode: browserManager.getConnectionMode(),
-  });
+  if (!opts?.skipActivity) {
+    emitActivity({
+      type: 'command_start',
+      command,
+      args,
+      url: browserManager.getCurrentUrl(),
+      tabs: browserManager.getTabCount(),
+      mode: browserManager.getConnectionMode(),
+      clientId: tokenInfo?.clientId,
+    });
+  }
 
   try {
     let result: string;
 
     if (READ_COMMANDS.has(command)) {
-      result = await handleReadCommand(command, args, browserManager);
-      if (PAGE_CONTENT_COMMANDS.has(command)) {
-        result = wrapUntrustedContent(result, browserManager.getCurrentUrl());
+      const isScoped = tokenInfo && tokenInfo.clientId !== 'root';
+      // Hidden element stripping for scoped tokens on text command
+      if (isScoped && command === 'text') {
+        const page = browserManager.getPage();
+        const strippedDescs = await markHiddenElements(page);
+        if (strippedDescs.length > 0) {
+          console.warn(`[browse] Content security: stripped ${strippedDescs.length} hidden elements for ${tokenInfo.clientId}`);
+        }
+        try {
+          const target = browserManager.getActiveFrameOrPage();
+          result = await getCleanTextWithStripping(target);
+        } finally {
+          await cleanupHiddenMarkers(page);
+        }
+      } else {
+        result = await handleReadCommand(command, args, browserManager);
       }
     } else if (WRITE_COMMANDS.has(command)) {
       result = await handleWriteCommand(command, args, browserManager);
     } else if (META_COMMANDS.has(command)) {
-      result = await handleMetaCommand(command, args, browserManager, shutdown);
+      // Pass chain depth + executeCommand callback so chain routes subcommands
+      // through the full security pipeline (scope, domain, tab, wrapping).
+      const chainDepth = (opts?.chainDepth ?? 0);
+      result = await handleMetaCommand(command, args, browserManager, shutdown, tokenInfo, {
+        chainDepth,
+        executeCommand: (body, ti) => handleCommandInternal(body, ti, {
+          skipRateCheck: true,    // chain counts as 1 request
+          skipActivity: true,     // chain emits 1 event for all subcommands
+          chainDepth: chainDepth + 1,  // recursion guard
+        }),
+      });
       // Start periodic snapshot interval when watch mode begins
       if (command === 'watch' && args[0] !== 'stop' && browserManager.isWatching()) {
         const watchInterval = setInterval(async () => {
@@ -873,32 +1030,61 @@ async function handleCommand(body: any): Promise<Response> {
       }
     } else if (command === 'help') {
       const helpText = generateHelpText();
-      return new Response(helpText, {
-        status: 200,
-        headers: { 'Content-Type': 'text/plain' },
-      });
+      return { status: 200, result: helpText };
     } else {
-      return new Response(JSON.stringify({
-        error: `Unknown command: ${command}`,
-        hint: `Available commands: ${[...READ_COMMANDS, ...WRITE_COMMANDS, ...META_COMMANDS].sort().join(', ')}`,
-      }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return {
+        status: 400, json: true,
+        result: JSON.stringify({
+          error: `Unknown command: ${command}`,
+          hint: `Available commands: ${[...READ_COMMANDS, ...WRITE_COMMANDS, ...META_COMMANDS].sort().join(', ')}`,
+        }),
+      };
     }
 
-    // Activity: emit command_end (success)
-    emitActivity({
-      type: 'command_end',
-      command,
-      args,
-      url: browserManager.getCurrentUrl(),
-      duration: Date.now() - startTime,
-      status: 'ok',
-      result: result,
-      tabs: browserManager.getTabCount(),
-      mode: browserManager.getConnectionMode(),
-    });
+    // ─── Centralized content wrapping (single location for all commands) ───
+    // Scoped tokens: content filter + enhanced envelope + datamarking
+    // Root tokens: basic untrusted content wrapper (backward compat)
+    // Chain exempt from top-level wrapping (each subcommand wrapped individually)
+    if (PAGE_CONTENT_COMMANDS.has(command) && command !== 'chain') {
+      const isScoped = tokenInfo && tokenInfo.clientId !== 'root';
+      if (isScoped) {
+        // Run content filters
+        const filterResult: ContentFilterResult = runContentFilters(
+          result, browserManager.getCurrentUrl(), command,
+        );
+        if (filterResult.blocked) {
+          return { status: 403, json: true, result: JSON.stringify({ error: filterResult.message }) };
+        }
+        // Datamark text command output only (not html, forms, or structured data)
+        if (command === 'text') {
+          result = datamarkContent(result);
+        }
+        // Enhanced envelope wrapping for scoped tokens
+        result = wrapUntrustedPageContent(
+          result, command,
+          filterResult.warnings.length > 0 ? filterResult.warnings : undefined,
+        );
+      } else {
+        // Root token: basic wrapping (backward compat, Decision 2)
+        result = wrapUntrustedContent(result, browserManager.getCurrentUrl());
+      }
+    }
+
+    // Activity: emit command_end (skipped for chain subcommands)
+    if (!opts?.skipActivity) {
+      emitActivity({
+        type: 'command_end',
+        command,
+        args,
+        url: browserManager.getCurrentUrl(),
+        duration: Date.now() - startTime,
+        status: 'ok',
+        result: result,
+        tabs: browserManager.getTabCount(),
+        mode: browserManager.getConnectionMode(),
+        clientId: tokenInfo?.clientId,
+      });
+    }
 
     browserManager.resetFailures();
     // Restore original active tab if we pinned to a specific one
@@ -907,10 +1093,7 @@ async function handleCommand(body: any): Promise<Response> {
         console.warn('[browse] Failed to restore tab after command:', restoreErr.message);
       }
     }
-    return new Response(result, {
-      status: 200,
-      headers: { 'Content-Type': 'text/plain' },
-    });
+    return { status: 200, result };
   } catch (err: any) {
     // Restore original active tab even on error
     if (savedTabId !== null) {
@@ -919,28 +1102,38 @@ async function handleCommand(body: any): Promise<Response> {
       }
     }
 
-    // Activity: emit command_end (error)
-    emitActivity({
-      type: 'command_end',
-      command,
-      args,
-      url: browserManager.getCurrentUrl(),
-      duration: Date.now() - startTime,
-      status: 'error',
-      error: err.message,
-      tabs: browserManager.getTabCount(),
-      mode: browserManager.getConnectionMode(),
-    });
+    // Activity: emit command_end (error) — skipped for chain subcommands
+    if (!opts?.skipActivity) {
+      emitActivity({
+        type: 'command_end',
+        command,
+        args,
+        url: browserManager.getCurrentUrl(),
+        duration: Date.now() - startTime,
+        status: 'error',
+        error: err.message,
+        tabs: browserManager.getTabCount(),
+        mode: browserManager.getConnectionMode(),
+        clientId: tokenInfo?.clientId,
+      });
+    }
 
     browserManager.incrementFailures();
     let errorMsg = wrapError(err);
     const hint = browserManager.getFailureHint();
     if (hint) errorMsg += '\n' + hint;
-    return new Response(JSON.stringify({ error: errorMsg }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return { status: 500, result: JSON.stringify({ error: errorMsg }), json: true };
   }
+}
+
+/** HTTP wrapper — converts CommandResult to Response */
+async function handleCommand(body: any, tokenInfo?: TokenInfo | null): Promise<Response> {
+  const cr = await handleCommandInternal(body, tokenInfo);
+  const contentType = cr.json ? 'application/json' : 'text/plain';
+  return new Response(cr.result, {
+    status: cr.status,
+    headers: { 'Content-Type': contentType, ...cr.headers },
+  });
 }
 
 async function shutdown() {
@@ -1141,6 +1334,255 @@ async function start() {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         });
+      }
+
+      // ─── /connect — setup key exchange for /pair-agent ceremony ────
+      if (url.pathname === '/connect' && req.method === 'POST') {
+        if (!checkConnectRateLimit()) {
+          return new Response(JSON.stringify({
+            error: 'Too many connection attempts. Wait 1 minute.',
+          }), { status: 429, headers: { 'Content-Type': 'application/json' } });
+        }
+        try {
+          const connectBody = await req.json() as { setup_key?: string };
+          if (!connectBody.setup_key) {
+            return new Response(JSON.stringify({ error: 'Missing setup_key' }), {
+              status: 400, headers: { 'Content-Type': 'application/json' },
+            });
+          }
+          const session = exchangeSetupKey(connectBody.setup_key);
+          if (!session) {
+            return new Response(JSON.stringify({
+              error: 'Invalid, expired, or already-used setup key',
+            }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+          }
+          console.log(`[browse] Remote agent connected: ${session.clientId} (scopes: ${session.scopes.join(',')})`);
+          return new Response(JSON.stringify({
+            token: session.token,
+            expires: session.expiresAt,
+            scopes: session.scopes,
+            agent: session.clientId,
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        } catch {
+          return new Response(JSON.stringify({ error: 'Invalid request body' }), {
+            status: 400, headers: { 'Content-Type': 'application/json' },
+          });
+        }
+      }
+
+      // ─── /token — mint scoped tokens (root-only) ──────────────────
+      if (url.pathname === '/token' && req.method === 'POST') {
+        if (!isRootRequest(req)) {
+          return new Response(JSON.stringify({
+            error: 'Only the root token can mint sub-tokens',
+          }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+        }
+        try {
+          const tokenBody = await req.json() as any;
+          if (!tokenBody.clientId) {
+            return new Response(JSON.stringify({ error: 'Missing clientId' }), {
+              status: 400, headers: { 'Content-Type': 'application/json' },
+            });
+          }
+          const session = createToken({
+            clientId: tokenBody.clientId,
+            scopes: tokenBody.scopes,
+            domains: tokenBody.domains,
+            tabPolicy: tokenBody.tabPolicy,
+            rateLimit: tokenBody.rateLimit,
+            expiresSeconds: tokenBody.expiresSeconds,
+          });
+          return new Response(JSON.stringify({
+            token: session.token,
+            expires: session.expiresAt,
+            scopes: session.scopes,
+            agent: session.clientId,
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        } catch {
+          return new Response(JSON.stringify({ error: 'Invalid request body' }), {
+            status: 400, headers: { 'Content-Type': 'application/json' },
+          });
+        }
+      }
+
+      // ─── /token/:clientId — revoke a scoped token (root-only) ─────
+      if (url.pathname.startsWith('/token/') && req.method === 'DELETE') {
+        if (!isRootRequest(req)) {
+          return new Response(JSON.stringify({ error: 'Root token required' }), {
+            status: 403, headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        const clientId = url.pathname.slice('/token/'.length);
+        const revoked = revokeToken(clientId);
+        if (!revoked) {
+          return new Response(JSON.stringify({ error: `Agent "${clientId}" not found` }), {
+            status: 404, headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        console.log(`[browse] Revoked token for: ${clientId}`);
+        return new Response(JSON.stringify({ revoked: clientId }), {
+          status: 200, headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      // ─── /agents — list connected agents (root-only) ──────────────
+      if (url.pathname === '/agents' && req.method === 'GET') {
+        if (!isRootRequest(req)) {
+          return new Response(JSON.stringify({ error: 'Root token required' }), {
+            status: 403, headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        const agents = listTokens().map(t => ({
+          clientId: t.clientId,
+          scopes: t.scopes,
+          domains: t.domains,
+          expiresAt: t.expiresAt,
+          commandCount: t.commandCount,
+          createdAt: t.createdAt,
+        }));
+        return new Response(JSON.stringify({ agents }), {
+          status: 200, headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      // ─── /pair — create setup key for pair-agent ceremony (root-only) ───
+      if (url.pathname === '/pair' && req.method === 'POST') {
+        if (!isRootRequest(req)) {
+          return new Response(JSON.stringify({ error: 'Root token required' }), {
+            status: 403, headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        try {
+          const pairBody = await req.json() as any;
+          const scopes = pairBody.admin
+            ? ['read', 'write', 'admin', 'meta'] as const
+            : (pairBody.scopes || ['read', 'write']) as const;
+          const setupKey = createSetupKey({
+            clientId: pairBody.clientId,
+            scopes: [...scopes],
+            domains: pairBody.domains,
+            rateLimit: pairBody.rateLimit,
+          });
+          // Verify tunnel is actually alive before reporting it (ngrok may have died externally)
+          let verifiedTunnelUrl: string | null = null;
+          if (tunnelActive && tunnelUrl) {
+            try {
+              const probe = await fetch(`${tunnelUrl}/health`, {
+                headers: { 'ngrok-skip-browser-warning': 'true' },
+                signal: AbortSignal.timeout(5000),
+              });
+              if (probe.ok) {
+                verifiedTunnelUrl = tunnelUrl;
+              } else {
+                console.warn(`[browse] Tunnel probe failed (HTTP ${probe.status}), marking tunnel as dead`);
+                tunnelActive = false;
+                tunnelUrl = null;
+                tunnelListener = null;
+              }
+            } catch {
+              console.warn('[browse] Tunnel probe timed out or unreachable, marking tunnel as dead');
+              tunnelActive = false;
+              tunnelUrl = null;
+              tunnelListener = null;
+            }
+          }
+          return new Response(JSON.stringify({
+            setup_key: setupKey.token,
+            expires_at: setupKey.expiresAt,
+            scopes: setupKey.scopes,
+            tunnel_url: verifiedTunnelUrl,
+            server_url: `http://127.0.0.1:${server?.port || 0}`,
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        } catch {
+          return new Response(JSON.stringify({ error: 'Invalid request body' }), {
+            status: 400, headers: { 'Content-Type': 'application/json' },
+          });
+        }
+      }
+
+      // ─── /tunnel/start — start ngrok tunnel on demand (root-only) ──
+      if (url.pathname === '/tunnel/start' && req.method === 'POST') {
+        if (!isRootRequest(req)) {
+          return new Response(JSON.stringify({ error: 'Root token required' }), {
+            status: 403, headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (tunnelActive && tunnelUrl) {
+          // Verify tunnel is still alive before returning cached URL
+          try {
+            const probe = await fetch(`${tunnelUrl}/health`, {
+              headers: { 'ngrok-skip-browser-warning': 'true' },
+              signal: AbortSignal.timeout(5000),
+            });
+            if (probe.ok) {
+              return new Response(JSON.stringify({ url: tunnelUrl, already_active: true }), {
+                status: 200, headers: { 'Content-Type': 'application/json' },
+              });
+            }
+          } catch {}
+          // Tunnel is dead, reset and fall through to restart
+          console.warn('[browse] Cached tunnel is dead, restarting...');
+          tunnelActive = false;
+          tunnelUrl = null;
+          tunnelListener = null;
+        }
+        try {
+          // Read ngrok authtoken: env var > ~/.gstack/ngrok.env > ngrok native config
+          let authtoken = process.env.NGROK_AUTHTOKEN;
+          if (!authtoken) {
+            const ngrokEnvPath = path.join(process.env.HOME || '', '.gstack', 'ngrok.env');
+            if (fs.existsSync(ngrokEnvPath)) {
+              const envContent = fs.readFileSync(ngrokEnvPath, 'utf-8');
+              const match = envContent.match(/^NGROK_AUTHTOKEN=(.+)$/m);
+              if (match) authtoken = match[1].trim();
+            }
+          }
+          if (!authtoken) {
+            // Check ngrok's native config files
+            const ngrokConfigs = [
+              path.join(process.env.HOME || '', 'Library', 'Application Support', 'ngrok', 'ngrok.yml'),
+              path.join(process.env.HOME || '', '.config', 'ngrok', 'ngrok.yml'),
+              path.join(process.env.HOME || '', '.ngrok2', 'ngrok.yml'),
+            ];
+            for (const conf of ngrokConfigs) {
+              try {
+                const content = fs.readFileSync(conf, 'utf-8');
+                const match = content.match(/authtoken:\s*(.+)/);
+                if (match) { authtoken = match[1].trim(); break; }
+              } catch {}
+            }
+          }
+          if (!authtoken) {
+            return new Response(JSON.stringify({
+              error: 'No ngrok authtoken found',
+              hint: 'Run: ngrok config add-authtoken YOUR_TOKEN',
+            }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+          }
+          const ngrok = await import('@ngrok/ngrok');
+          const domain = process.env.NGROK_DOMAIN;
+          const forwardOpts: any = { addr: server!.port, authtoken };
+          if (domain) forwardOpts.domain = domain;
+
+          tunnelListener = await ngrok.forward(forwardOpts);
+          tunnelUrl = tunnelListener.url();
+          tunnelActive = true;
+          console.log(`[browse] Tunnel started on demand: ${tunnelUrl}`);
+
+          // Update state file
+          const stateContent = JSON.parse(fs.readFileSync(config.stateFile, 'utf-8'));
+          stateContent.tunnel = { url: tunnelUrl, domain: domain || null, startedAt: new Date().toISOString() };
+          const tmpState = config.stateFile + '.tmp';
+          fs.writeFileSync(tmpState, JSON.stringify(stateContent, null, 2), { mode: 0o600 });
+          fs.renameSync(tmpState, config.stateFile);
+
+          return new Response(JSON.stringify({ url: tunnelUrl }), {
+            status: 200, headers: { 'Content-Type': 'application/json' },
+          });
+        } catch (err: any) {
+          return new Response(JSON.stringify({
+            error: `Failed to start tunnel: ${err.message}`,
+          }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+        }
       }
 
       // Refs endpoint — auth required, does NOT reset idle timer
@@ -1494,7 +1936,115 @@ async function start() {
         return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
-      // ─── Auth-required endpoints ──────────────────────────────────
+      // ─── Batch endpoint — N commands, 1 HTTP round-trip ─────────────
+      // Accepts both root AND scoped tokens (same as /command).
+      // Executes commands sequentially through the full security pipeline.
+      // Designed for remote agents where tunnel latency dominates.
+      if (url.pathname === '/batch' && req.method === 'POST') {
+        const tokenInfo = getTokenInfo(req);
+        if (!tokenInfo) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        resetIdleTimer();
+        const body = await req.json();
+        const { commands } = body;
+
+        if (!Array.isArray(commands) || commands.length === 0) {
+          return new Response(JSON.stringify({ error: '"commands" must be a non-empty array' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (commands.length > 50) {
+          return new Response(JSON.stringify({ error: 'Max 50 commands per batch' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+
+        const startTime = Date.now();
+        emitActivity({
+          type: 'command_start',
+          command: 'batch',
+          args: [`${commands.length} commands`],
+          url: browserManager.getCurrentUrl(),
+          tabs: browserManager.getTabCount(),
+          mode: browserManager.getConnectionMode(),
+          clientId: tokenInfo?.clientId,
+        });
+
+        const results: Array<{ index: number; status: number; result: string; command: string; tabId?: number }> = [];
+        for (let i = 0; i < commands.length; i++) {
+          const cmd = commands[i];
+          if (!cmd || typeof cmd.command !== 'string') {
+            results.push({ index: i, status: 400, result: JSON.stringify({ error: 'Missing "command" field' }), command: '' });
+            continue;
+          }
+          // Reject nested batches
+          if (cmd.command === 'batch') {
+            results.push({ index: i, status: 400, result: JSON.stringify({ error: 'Nested batch commands are not allowed' }), command: 'batch' });
+            continue;
+          }
+          const cr = await handleCommandInternal(
+            { command: cmd.command, args: cmd.args, tabId: cmd.tabId },
+            tokenInfo,
+            { skipRateCheck: true, skipActivity: true },
+          );
+          results.push({
+            index: i,
+            status: cr.status,
+            result: cr.result,
+            command: cmd.command,
+            tabId: cmd.tabId,
+          });
+        }
+
+        const duration = Date.now() - startTime;
+        emitActivity({
+          type: 'command_end',
+          command: 'batch',
+          args: [`${commands.length} commands`],
+          url: browserManager.getCurrentUrl(),
+          duration,
+          status: 'ok',
+          result: `${results.filter(r => r.status === 200).length}/${commands.length} succeeded`,
+          tabs: browserManager.getTabCount(),
+          mode: browserManager.getConnectionMode(),
+          clientId: tokenInfo?.clientId,
+        });
+
+        return new Response(JSON.stringify({
+          results,
+          duration,
+          total: commands.length,
+          succeeded: results.filter(r => r.status === 200).length,
+          failed: results.filter(r => r.status !== 200).length,
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      // ─── Command endpoint (accepts both root AND scoped tokens) ────
+      // Must be checked BEFORE the blanket root-only auth gate below,
+      // because scoped tokens from /connect are valid for /command.
+      if (url.pathname === '/command' && req.method === 'POST') {
+        const tokenInfo = getTokenInfo(req);
+        if (!tokenInfo) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        resetIdleTimer();
+        const body = await req.json();
+        return handleCommand(body, tokenInfo);
+      }
+
+      // ─── Auth-required endpoints (root token only) ─────────────────
 
       if (!validateAuth(req)) {
         return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -1654,14 +2204,6 @@ async function start() {
         });
       }
 
-      // ─── Command endpoint ──────────────────────────────────────────
-
-      if (url.pathname === '/command' && req.method === 'POST') {
-        resetIdleTimer();  // Only commands reset idle timer
-        const body = await req.json();
-        return handleCommand(body);
-      }
-
       return new Response('Not found', { status: 404 });
     },
   });
@@ -1721,6 +2263,51 @@ async function start() {
 
   // Initialize sidebar session (load existing or create new)
   initSidebarSession();
+
+  // ─── Tunnel startup (optional) ────────────────────────────────
+  // Start ngrok tunnel if BROWSE_TUNNEL=1 is set.
+  // Reads NGROK_AUTHTOKEN from env or ~/.gstack/ngrok.env.
+  // Reads NGROK_DOMAIN for dedicated domain (stable URL).
+  if (process.env.BROWSE_TUNNEL === '1') {
+    try {
+      // Read ngrok authtoken from env or config file
+      let authtoken = process.env.NGROK_AUTHTOKEN;
+      if (!authtoken) {
+        const ngrokEnvPath = path.join(process.env.HOME || '', '.gstack', 'ngrok.env');
+        if (fs.existsSync(ngrokEnvPath)) {
+          const envContent = fs.readFileSync(ngrokEnvPath, 'utf-8');
+          const match = envContent.match(/^NGROK_AUTHTOKEN=(.+)$/m);
+          if (match) authtoken = match[1].trim();
+        }
+      }
+      if (!authtoken) {
+        console.error('[browse] BROWSE_TUNNEL=1 but no NGROK_AUTHTOKEN found. Set it via env var or ~/.gstack/ngrok.env');
+      } else {
+        const ngrok = await import('@ngrok/ngrok');
+        const domain = process.env.NGROK_DOMAIN;
+        const forwardOpts: any = {
+          addr: port,
+          authtoken,
+        };
+        if (domain) forwardOpts.domain = domain;
+
+        tunnelListener = await ngrok.forward(forwardOpts);
+        tunnelUrl = tunnelListener.url();
+        tunnelActive = true;
+
+        console.log(`[browse] Tunnel active: ${tunnelUrl}`);
+
+        // Update state file with tunnel URL
+        const stateContent = JSON.parse(fs.readFileSync(config.stateFile, 'utf-8'));
+        stateContent.tunnel = { url: tunnelUrl, domain: domain || null, startedAt: new Date().toISOString() };
+        const tmpState = config.stateFile + '.tmp';
+        fs.writeFileSync(tmpState, JSON.stringify(stateContent, null, 2), { mode: 0o600 });
+        fs.renameSync(tmpState, config.stateFile);
+      }
+    } catch (err: any) {
+      console.error(`[browse] Failed to start tunnel: ${err.message}`);
+    }
+  }
 }
 
 start().catch((err) => {

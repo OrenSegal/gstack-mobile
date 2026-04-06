@@ -132,7 +132,8 @@ function parseLine(line: string): ParsedNode | null {
  */
 export async function handleSnapshot(
   args: string[],
-  bm: BrowserManager
+  bm: BrowserManager,
+  securityOpts?: { splitForScoped?: boolean },
 ): Promise<string> {
   const opts = parseSnapshotArgs(args);
   const page = bm.getPage();
@@ -457,6 +458,38 @@ export async function handleSnapshot(
   if (inFrame) {
     const frameUrl = bm.getFrame()?.url() ?? 'unknown';
     output.unshift(`[Context: iframe src="${frameUrl}"]`);
+  }
+
+  // Split output for scoped tokens: trusted refs + untrusted text
+  if (securityOpts?.splitForScoped) {
+    const trustedRefs: string[] = [];
+    const untrustedLines: string[] = [];
+
+    for (const line of output) {
+      // Lines starting with @ref are interactive elements (trusted metadata)
+      const refMatch = line.match(/^(\s*)@(e\d+|c\d+)\s+\[([^\]]+)\]\s*(.*)/);
+      if (refMatch) {
+        const [, indent, ref, role, rest] = refMatch;
+        // Truncate element name/content to 50 chars for trusted section
+        const nameMatch = rest.match(/^"(.+?)"/);
+        let truncName = nameMatch ? nameMatch[1] : rest.trim();
+        if (truncName.length > 50) truncName = truncName.slice(0, 47) + '...';
+        trustedRefs.push(`${indent}@${ref} [${role}] "${truncName}"`);
+      }
+      // All lines go to untrusted section (full content)
+      untrustedLines.push(line);
+    }
+
+    const parts: string[] = [];
+    if (trustedRefs.length > 0) {
+      parts.push('INTERACTIVE ELEMENTS (trusted — use these @refs for click/fill):');
+      parts.push(...trustedRefs);
+      parts.push('');
+    }
+    parts.push('═══ BEGIN UNTRUSTED WEB CONTENT ═══');
+    parts.push(...untrustedLines);
+    parts.push('═══ END UNTRUSTED WEB CONTENT ═══');
+    return parts.join('\n');
   }
 
   return output.join('\n');
