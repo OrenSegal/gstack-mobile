@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.12.0] - 2026-04-06
+
+### Fixed
+- `snapshot -i` now auto-includes cursor-interactive elements (dropdown items, popover options, custom listboxes). Previously you had to remember to pass `-C` separately — now `-i` alone finds everything clickable on the page.
+- Snapshot correctly captures items inside floating containers (React portals, Radix Popover, Floating UI) even when they have ARIA roles. Previously these were silently skipped because the accessibility tree sometimes misses dynamically-rendered portals.
+- Dropdown/menu items with `role="option"` or `role="menuitem"` inside popovers are now captured and tagged with `popover-child` in the reason string, making them easy to identify.
+
 ## [0.15.11.0] - 2026-04-05
 
 ### Changed
