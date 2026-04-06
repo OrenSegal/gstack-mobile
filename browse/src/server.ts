@@ -282,6 +282,10 @@ function loadSession(): SidebarSession | null {
   try {
     const activeFile = path.join(SESSIONS_DIR, 'active.json');
     const activeData = JSON.parse(fs.readFileSync(activeFile, 'utf-8'));
+    if (typeof activeData.id !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(activeData.id)) {
+      console.warn('[browse] Invalid session ID in active.json — ignoring');
+      return null;
+    }
     const sessionFile = path.join(SESSIONS_DIR, activeData.id, 'session.json');
     const session = JSON.parse(fs.readFileSync(sessionFile, 'utf-8')) as SidebarSession;
     // Validate worktree still exists — crash may have left stale path
@@ -560,6 +564,7 @@ function spawnClaude(userMessage: string, extensionUrl?: string | null, forTabId
   try {
     fs.mkdirSync(gstackDir, { recursive: true, mode: 0o700 });
     fs.appendFileSync(agentQueue, entry + '\n');
+    try { fs.chmodSync(agentQueue, 0o600); } catch {}
   } catch (err: any) {
     addChatEntry({ ts: new Date().toISOString(), role: 'agent', type: 'agent_error', error: `Failed to queue: ${err.message}` });
     agentStatus = 'idle';
@@ -572,7 +577,7 @@ function spawnClaude(userMessage: string, extensionUrl?: string | null, forTabId
   // Agent status transitions happen when we receive agent_done/agent_error events.
 }
 
-function killAgent(): void {
+function killAgent(targetTabId?: number | null): void {
   if (agentProcess) {
     try { agentProcess.kill('SIGTERM'); } catch (err: any) {
       console.warn('[browse] Failed to SIGTERM agent:', err.message);
@@ -581,17 +586,18 @@ function killAgent(): void {
       console.warn('[browse] Failed to SIGKILL agent:', err.message);
     } }, 3000);
   }
+  // Signal the sidebar-agent worker to cancel via a per-tab cancel file.
+  // Using per-tab files prevents race conditions where one agent's cancel
+  // signal is consumed by a different tab's agent in concurrent mode.
+  // When targetTabId is provided, only that tab's agent is cancelled.
+  const cancelDir = path.join(process.env.HOME || '/tmp', '.gstack');
+  const tabId = targetTabId ?? agentTabId ?? 0;
+  const cancelFile = path.join(cancelDir, `sidebar-agent-cancel-${tabId}`);
+  try { fs.writeFileSync(cancelFile, Date.now().toString()); } catch {}
   agentProcess = null;
   agentStartTime = null;
   currentMessage = null;
   agentStatus = 'idle';
-
-  // Signal sidebar-agent.ts to kill its active claude subprocess.
-  // sidebar-agent runs in a separate non-compiled Bun process (posix_spawn
-  // limitation). It polls the kill-signal file and terminates on any write.
-  const agentQueue = process.env.SIDEBAR_QUEUE_PATH || path.join(process.env.HOME || '/tmp', '.gstack', 'sidebar-agent-queue.jsonl');
-  const killFile = path.join(path.dirname(agentQueue), 'sidebar-agent-kill');
-  try { fs.writeFileSync(killFile, String(Date.now())); } catch {}
 }
 
 // Agent health check — detect hung processes
@@ -690,6 +696,23 @@ const idleCheckInterval = setInterval(() => {
     shutdown();
   }
 }, 60_000);
+
+// ─── Parent-Process Watchdog ────────────────────────────────────────
+// When the spawning CLI process (e.g. a Claude Code session) exits, this
+// server can become an orphan — keeping chrome-headless-shell alive and
+// causing console-window flicker on Windows. Poll the parent PID every 15s
+// and self-terminate if it is gone.
+const BROWSE_PARENT_PID = parseInt(process.env.BROWSE_PARENT_PID || '0', 10);
+if (BROWSE_PARENT_PID > 0) {
+  setInterval(() => {
+    try {
+      process.kill(BROWSE_PARENT_PID, 0); // signal 0 = existence check only, no signal sent
+    } catch {
+      console.log(`[browse] Parent process ${BROWSE_PARENT_PID} exited, shutting down`);
+      shutdown();
+    }
+  }, 15_000);
+}
 
 // ─── Command Sets (from commands.ts — single source of truth) ───
 import { READ_COMMANDS, WRITE_COMMANDS, META_COMMANDS } from './commands';
@@ -1060,12 +1083,13 @@ async function start() {
         const welcomePath = (() => {
           // Check project-local designs first, then global
           const slug = process.env.GSTACK_SLUG || 'unknown';
-          const projectWelcome = `${process.env.HOME}/.gstack/projects/${slug}/designs/welcome-page-20260331/finalized.html`;
+          const homeDir = process.env.HOME || process.env.USERPROFILE || '/tmp';
+          const projectWelcome = `${homeDir}/.gstack/projects/${slug}/designs/welcome-page-20260331/finalized.html`;
           try { if (require('fs').existsSync(projectWelcome)) return projectWelcome; } catch (err: any) {
             console.warn('[browse] Error checking project welcome page:', err.message);
           }
           // Fallback: built-in welcome page from gstack install
-          const skillRoot = process.env.GSTACK_SKILL_ROOT || `${process.env.HOME}/.claude/skills/gstack`;
+          const skillRoot = process.env.GSTACK_SKILL_ROOT || `${homeDir}/.claude/skills/gstack`;
           const builtinWelcome = `${skillRoot}/browse/src/welcome.html`;
           try { if (require('fs').existsSync(builtinWelcome)) return builtinWelcome; } catch (err: any) {
             console.warn('[browse] Error checking builtin welcome page:', err.message);
@@ -1080,8 +1104,14 @@ async function start() {
             console.error('[browse] Failed to read welcome page:', welcomePath, err.message);
           }
         }
-        // No welcome page found — redirect to about:blank
-        return new Response('', { status: 302, headers: { 'Location': 'about:blank' } });
+        // No welcome page found — serve a simple fallback (avoid ERR_UNSAFE_REDIRECT on Windows)
+        return new Response(
+          `<!DOCTYPE html><html><head><title>GStack Browser</title>
+          <style>body{background:#111;color:#fff;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}
+          .msg{text-align:center;opacity:.7;}.gold{color:#f5a623;font-size:2em;margin-bottom:12px;}</style></head>
+          <body><div class="msg"><div class="gold">◈</div><p>GStack Browser ready.</p><p style="font-size:.85em">Waiting for commands from Claude Code.</p></div></body></html>`,
+          { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+        );
       }
 
       // Health check — no auth required, does NOT reset idle timer
@@ -1092,17 +1122,18 @@ async function start() {
           mode: browserManager.getConnectionMode(),
           uptime: Math.floor((Date.now() - startTime) / 1000),
           tabs: browserManager.getTabCount(),
-          currentUrl: browserManager.getCurrentUrl(),
-          // Auth token for extension bootstrap. Only returned when the request
-          // comes from a Chrome extension (Origin: chrome-extension://...).
+          // Auth token for extension bootstrap. Safe: /health is localhost-only.
           // Previously served unconditionally, but that leaks the token if the
           // server is tunneled to the internet (ngrok, SSH tunnel).
-          ...(req.headers.get('origin')?.startsWith('chrome-extension://') ? { token: AUTH_TOKEN } : {}),
+          // In headed mode the server is always local, so return token unconditionally
+          // (fixes Playwright Chromium extensions that don't send Origin header).
+          ...(browserManager.getConnectionMode() === 'headed' ||
+              req.headers.get('origin')?.startsWith('chrome-extension://')
+              ? { token: AUTH_TOKEN } : {}),
           chatEnabled: true,
           agent: {
             status: agentStatus,
             runningFor: agentStartTime ? Date.now() - agentStartTime : null,
-            currentMessage,
             queueLength: messageQueue.length,
           },
           session: sidebarSession ? { id: sidebarSession.id, name: sidebarSession.name } : null,
@@ -1223,9 +1254,10 @@ async function start() {
         }
         try {
           // Sync active tab from Chrome extension — detects manual tab switches
-          const activeUrl = url.searchParams.get('activeUrl');
-          if (activeUrl) {
-            browserManager.syncActiveTabByUrl(activeUrl);
+          const rawActiveUrl = url.searchParams.get('activeUrl');
+          const sanitizedActiveUrl = sanitizeExtensionUrl(rawActiveUrl);
+          if (sanitizedActiveUrl) {
+            browserManager.syncActiveTabByUrl(sanitizedActiveUrl);
           }
           const tabs = await browserManager.getTabListWithTitles();
           return new Response(JSON.stringify({ tabs }), {
@@ -1294,11 +1326,12 @@ async function start() {
         // The Chrome extension sends the active tab's URL — prefer it over
         // Playwright's page.url() which can be stale in headed mode when
         // the user navigates manually.
-        const extensionUrl = body.activeTabUrl || null;
+        const rawExtensionUrl = body.activeTabUrl || null;
+        const sanitizedExtUrl = sanitizeExtensionUrl(rawExtensionUrl);
         // Sync active tab BEFORE reading the ID — the user may have switched
         // tabs manually and the server's activeTabId is stale.
-        if (extensionUrl) {
-          browserManager.syncActiveTabByUrl(extensionUrl);
+        if (sanitizedExtUrl) {
+          browserManager.syncActiveTabByUrl(sanitizedExtUrl);
         }
         const msgTabId = browserManager?.getActiveTabId?.() ?? 0;
         const ts = new Date().toISOString();
@@ -1308,12 +1341,12 @@ async function start() {
         // Per-tab agent: each tab can run its own agent concurrently
         const tabState = getTabAgent(msgTabId);
         if (tabState.status === 'idle') {
-          spawnClaude(msg, extensionUrl, msgTabId);
+          spawnClaude(msg, sanitizedExtUrl, msgTabId);
           return new Response(JSON.stringify({ ok: true, processing: true }), {
             status: 200, headers: { 'Content-Type': 'application/json' },
           });
         } else if (tabState.queue.length < MAX_QUEUE) {
-          tabState.queue.push({ message: msg, ts, extensionUrl });
+          tabState.queue.push({ message: msg, ts, extensionUrl: sanitizedExtUrl });
           return new Response(JSON.stringify({ ok: true, queued: true, position: tabState.queue.length }), {
             status: 200, headers: { 'Content-Type': 'application/json' },
           });
@@ -1344,7 +1377,8 @@ async function start() {
         if (!validateAuth(req)) {
           return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
         }
-        killAgent();
+        const killBody = await req.json().catch(() => ({}));
+        killAgent(killBody.tabId ?? null);
         addChatEntry({ ts: new Date().toISOString(), role: 'agent', type: 'agent_error', error: 'Killed by user' });
         // Process next in queue
         if (messageQueue.length > 0) {
@@ -1359,7 +1393,8 @@ async function start() {
         if (!validateAuth(req)) {
           return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
         }
-        killAgent();
+        const stopBody = await req.json().catch(() => ({}));
+        killAgent(stopBody.tabId ?? null);
         addChatEntry({ ts: new Date().toISOString(), role: 'agent', type: 'agent_error', error: 'Stopped by user' });
         return new Response(JSON.stringify({ ok: true, queuedMessages: messageQueue.length }), {
           status: 200, headers: { 'Content-Type': 'application/json' },

@@ -20,7 +20,8 @@ let connState = 'disconnected'; // disconnected | connected | reconnecting | dea
 let lastOptimisticMsg = null; // track optimistically rendered user msg to avoid dupes
 let sidebarActiveTabId = null; // which browser tab's chat we're showing
 const chatLineCountByTab = {}; // tabId -> last seen chatLineCount
-const chatDomByTab = {}; // tabId -> saved innerHTML
+const chatDomByTab = {}; // tabId -> saved DocumentFragment (never serialized HTML)
+let pollInProgress = false; // reentrancy guard — prevents concurrent/recursive pollChat calls
 let reconnectAttempts = 0;
 let reconnectTimer = null;
 const MAX_RECONNECT_ATTEMPTS = 30; // 30 * 2s = 60s before showing "dead"
@@ -390,7 +391,9 @@ document.getElementById('stop-agent-btn').addEventListener('click', stopAgent);
 let initialLoadDone = false;
 
 async function pollChat() {
-  if (!serverUrl || !serverToken) return;
+  if (pollInProgress) return;
+  pollInProgress = true;
+  if (!serverUrl || !serverToken) { pollInProgress = false; return; }
   try {
     // Request chat for the currently displayed tab
     const tabParam = sidebarActiveTabId !== null ? `&tabId=${sidebarActiveTabId}` : '';
@@ -449,6 +452,8 @@ async function pollChat() {
     updateStopButton(data.agentStatus === 'processing');
   } catch (err) {
     console.error('[gstack sidebar] Chat poll error:', err.message);
+  } finally {
+    pollInProgress = false;
   }
 }
 
@@ -458,7 +463,11 @@ function switchChatTab(newTabId) {
 
   // Save current tab's chat DOM + scroll position
   if (sidebarActiveTabId !== null) {
-    chatDomByTab[sidebarActiveTabId] = chatMessages.innerHTML;
+    const frag = document.createDocumentFragment();
+    while (chatMessages.firstChild) {
+      frag.appendChild(chatMessages.firstChild);
+    }
+    chatDomByTab[sidebarActiveTabId] = frag;
     chatLineCountByTab[sidebarActiveTabId] = chatLineCount;
   }
 
@@ -468,7 +477,8 @@ function switchChatTab(newTabId) {
   // mid-message (the server may have switched tabs because the user's
   // Chrome tab changed, but we still want to show the optimistic UI).
   if (chatDomByTab[newTabId]) {
-    chatMessages.innerHTML = chatDomByTab[newTabId];
+    while (chatMessages.firstChild) chatMessages.removeChild(chatMessages.firstChild);
+    chatMessages.appendChild(chatDomByTab[newTabId]);
     chatLineCount = chatLineCountByTab[newTabId] || 0;
     // Reset agent state for restored tab
     agentContainer = null;
@@ -480,12 +490,22 @@ function switchChatTab(newTabId) {
     chatLineCount = 0;
     // agentContainer/agentTextEl are already set from sendMessage()
   } else {
-    chatMessages.innerHTML = `
-      <div class="chat-welcome" id="chat-welcome">
-        <div class="chat-welcome-icon">G</div>
-        <p>Send a message about this page.</p>
-        <p class="muted">Each tab has its own conversation.</p>
-      </div>`;
+    while (chatMessages.firstChild) chatMessages.removeChild(chatMessages.firstChild);
+    const welcomeDiv = document.createElement('div');
+    welcomeDiv.className = 'chat-welcome';
+    welcomeDiv.id = 'chat-welcome';
+    const iconDiv = document.createElement('div');
+    iconDiv.className = 'chat-welcome-icon';
+    iconDiv.textContent = 'G';
+    welcomeDiv.appendChild(iconDiv);
+    const p1 = document.createElement('p');
+    p1.textContent = 'Send a message about this page.';
+    welcomeDiv.appendChild(p1);
+    const p2 = document.createElement('p');
+    p2.className = 'muted';
+    p2.textContent = 'Each tab has its own conversation.';
+    welcomeDiv.appendChild(p2);
+    chatMessages.appendChild(welcomeDiv);
     chatLineCount = 0;
     // Reset agent state for fresh tab
     agentContainer = null;
@@ -494,7 +514,7 @@ function switchChatTab(newTabId) {
   }
 
   // Immediately poll the new tab's chat
-  pollChat();
+  setTimeout(pollChat, 0);
 }
 
 function updateStopButton(agentRunning) {
@@ -1570,7 +1590,10 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'health') {
     if (msg.data) {
       const url = `http://127.0.0.1:${msg.data.port || 34567}`;
-      updateConnection(url, msg.data.token);
+      // Request token via targeted sendResponse (not broadcast) to limit exposure
+      chrome.runtime.sendMessage({ type: 'getToken' }, (resp) => {
+        updateConnection(url, resp?.token || null);
+      });
       applyChatEnabled(!!msg.data.chatEnabled);
     } else {
       updateConnection(null);

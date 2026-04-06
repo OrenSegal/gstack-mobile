@@ -826,11 +826,11 @@ export class BrowserManager {
         // a tampered URL could navigate to cloud metadata endpoints or file:// URIs.
         try {
           await validateNavigationUrl(saved.url);
-          await page.goto(saved.url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-        } catch {
-          // Invalid URL in saved state — skip navigation, leave blank page
-          console.log(`[browse] restoreState: skipping unsafe URL: ${saved.url}`);
+        } catch (err: any) {
+          console.warn(`[browse] Skipping invalid URL in state file: ${saved.url} — ${err.message}`);
+          continue;
         }
+        await page.goto(saved.url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
       }
 
       if (saved.storage) {

@@ -55,6 +55,10 @@ export async function serve(options: ServeOptions): Promise<void> {
     process.exit(1);
   }
 
+  // Security: anchor all file reads to the initial HTML's directory.
+  // Prevents /api/reload from reading arbitrary files via path traversal.
+  const allowedDir = fs.realpathSync(path.dirname(path.resolve(html)));
+
   let htmlContent = fs.readFileSync(html, "utf-8");
   let state: ServerState = "serving";
   let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
@@ -185,19 +189,19 @@ export async function serve(options: ServeOptions): Promise<void> {
       );
     }
 
-    // Validate path is within cwd or temp directory
-    const resolved = path.resolve(newHtmlPath);
-    const safeDirs = [process.cwd(), os.tmpdir()];
-    const isSafe = safeDirs.some(dir => resolved.startsWith(dir + path.sep) || resolved === dir);
-    if (!isSafe) {
+    // Security: resolve symlinks and validate the reload path is within the
+    // allowed directory (anchored to the initial HTML file's parent).
+    // Prevents path traversal via /api/reload reading arbitrary files.
+    const resolvedReload = fs.realpathSync(path.resolve(newHtmlPath));
+    if (!resolvedReload.startsWith(allowedDir + path.sep) && resolvedReload !== allowedDir) {
       return Response.json(
-        { error: `Path must be within working directory or temp` },
+        { error: `Path must be within: ${allowedDir}` },
         { status: 403 }
       );
     }
 
     // Swap the HTML content
-    htmlContent = fs.readFileSync(newHtmlPath, "utf-8");
+    htmlContent = fs.readFileSync(resolvedReload, "utf-8");
     state = "serving";
 
     console.error(`SERVE_RELOADED: html=${newHtmlPath}`);

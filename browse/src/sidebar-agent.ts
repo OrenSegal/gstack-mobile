@@ -20,12 +20,50 @@ const SERVER_URL = `http://127.0.0.1:${SERVER_PORT}`;
 const POLL_MS = 200;  // 200ms poll — keeps time-to-first-token low
 const B = process.env.BROWSE_BIN || path.resolve(__dirname, '../../.claude/skills/gstack/browse/dist/browse');
 
+const CANCEL_DIR = path.join(process.env.HOME || '/tmp', '.gstack');
+function cancelFileForTab(tabId: number): string {
+  return path.join(CANCEL_DIR, `sidebar-agent-cancel-${tabId}`);
+}
+
+interface QueueEntry {
+  prompt: string;
+  args?: string[];
+  stateFile?: string;
+  cwd?: string;
+  tabId?: number | null;
+  message?: string | null;
+  pageUrl?: string | null;
+  sessionId?: string | null;
+  ts?: string;
+}
+
+function isValidQueueEntry(e: unknown): e is QueueEntry {
+  if (typeof e !== 'object' || e === null) return false;
+  const obj = e as Record<string, unknown>;
+  if (typeof obj.prompt !== 'string' || obj.prompt.length === 0) return false;
+  if (obj.args !== undefined && (!Array.isArray(obj.args) || !obj.args.every(a => typeof a === 'string'))) return false;
+  if (obj.stateFile !== undefined) {
+    if (typeof obj.stateFile !== 'string') return false;
+    if (obj.stateFile.includes('..')) return false;
+  }
+  if (obj.cwd !== undefined) {
+    if (typeof obj.cwd !== 'string') return false;
+    if (obj.cwd.includes('..')) return false;
+  }
+  if (obj.tabId !== undefined && obj.tabId !== null && typeof obj.tabId !== 'number') return false;
+  if (obj.message !== undefined && obj.message !== null && typeof obj.message !== 'string') return false;
+  if (obj.pageUrl !== undefined && obj.pageUrl !== null && typeof obj.pageUrl !== 'string') return false;
+  if (obj.sessionId !== undefined && obj.sessionId !== null && typeof obj.sessionId !== 'string') return false;
+  return true;
+}
+
 let lastLine = 0;
 let authToken: string | null = null;
 // Per-tab processing — each tab can run its own agent concurrently
 const processingTabs = new Set<number>();
 // Active claude subprocesses — keyed by tabId for targeted kill
 const activeProcs = new Map<number, ReturnType<typeof spawn>>();
+let activeProc: ReturnType<typeof spawn> | null = null;
 // Kill-file timestamp last seen — avoids double-kill on same write
 let lastKillTs = 0;
 
@@ -228,7 +266,7 @@ async function handleStreamEvent(event: any, tabId?: number): Promise<void> {
   }
 }
 
-async function askClaude(queueEntry: any): Promise<void> {
+async function askClaude(queueEntry: QueueEntry): Promise<void> {
   const { prompt, args, stateFile, cwd, tabId } = queueEntry;
   const tid = tabId ?? 0;
 
@@ -250,6 +288,10 @@ async function askClaude(queueEntry: any): Promise<void> {
       effectiveCwd = process.cwd();
     }
 
+    // Clear any stale cancel signal for this tab before starting
+    const cancelFile = cancelFileForTab(tid);
+    try { fs.unlinkSync(cancelFile); } catch {}
+
     const proc = spawn('claude', claudeArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: effectiveCwd,
@@ -270,8 +312,22 @@ async function askClaude(queueEntry: any): Promise<void> {
 
     // Track active procs so kill-file polling can terminate them
     activeProcs.set(tid, proc);
+    activeProc = proc;
 
     proc.stdin.end();
+
+    // Poll for per-tab cancel signal from server's killAgent()
+    const cancelCheck = setInterval(() => {
+      try {
+        if (fs.existsSync(cancelFile)) {
+          console.log(`[sidebar-agent] Cancel signal received for tab ${tid} — killing claude subprocess`);
+          try { proc.kill('SIGTERM'); } catch {}
+          setTimeout(() => { try { proc.kill('SIGKILL'); } catch {} }, 3000);
+          fs.unlinkSync(cancelFile);
+          clearInterval(cancelCheck);
+        }
+      } catch {}
+    }, 500);
 
     let buffer = '';
 
@@ -293,6 +349,8 @@ async function askClaude(queueEntry: any): Promise<void> {
     });
 
     proc.on('close', (code) => {
+      clearInterval(cancelCheck);
+      activeProc = null;
       activeProcs.delete(tid);
       if (buffer.trim()) {
         try { handleStreamEvent(JSON.parse(buffer), tid); } catch (err: any) {
@@ -310,6 +368,8 @@ async function askClaude(queueEntry: any): Promise<void> {
     });
 
     proc.on('error', (err) => {
+      clearInterval(cancelCheck);
+      activeProc = null;
       const errorMsg = stderrBuffer.trim()
         ? `${err.message}\nstderr: ${stderrBuffer.trim().slice(-500)}`
         : err.message;
@@ -322,9 +382,10 @@ async function askClaude(queueEntry: any): Promise<void> {
     // Timeout (default 300s / 5 min — multi-page tasks need time)
     const timeoutMs = parseInt(process.env.SIDEBAR_AGENT_TIMEOUT || '300000', 10);
     setTimeout(() => {
-      try { proc.kill(); } catch (killErr: any) {
+      try { proc.kill('SIGTERM'); } catch (killErr: any) {
         console.warn(`[sidebar-agent] Tab ${tid}: Failed to kill timed-out process:`, killErr.message);
       }
+      setTimeout(() => { try { proc.kill('SIGKILL'); } catch {} }, 3000);
       const timeoutMsg = stderrBuffer.trim()
         ? `Timed out after ${timeoutMs / 1000}s\nstderr: ${stderrBuffer.trim().slice(-500)}`
         : `Timed out after ${timeoutMs / 1000}s`;
@@ -366,12 +427,16 @@ async function poll() {
     const line = readLine(lastLine);
     if (!line) continue;
 
-    let entry: any;
-    try { entry = JSON.parse(line); } catch (err: any) {
+    let parsed: unknown;
+    try { parsed = JSON.parse(line); } catch (err: any) {
       console.warn(`[sidebar-agent] Skipping malformed queue entry at line ${lastLine}:`, line.slice(0, 80), err.message);
       continue;
     }
-    if (!entry.message && !entry.prompt) continue;
+    if (!isValidQueueEntry(parsed)) {
+      console.warn(`[sidebar-agent] Skipping invalid queue entry at line ${lastLine}: failed schema validation`);
+      continue;
+    }
+    const entry = parsed;
 
     const tid = entry.tabId ?? 0;
     // Skip if this tab already has an agent running — server queues per-tab
@@ -415,6 +480,7 @@ async function main() {
   const dir = path.dirname(QUEUE);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   if (!fs.existsSync(QUEUE)) fs.writeFileSync(QUEUE, '', { mode: 0o600 });
+  try { fs.chmodSync(QUEUE, 0o600); } catch {}
 
   lastLine = countLines();
   await refreshToken();

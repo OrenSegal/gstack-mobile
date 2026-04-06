@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.15.15.0] - 2026-04-06
+
+Community security wave: 8 PRs from 4 contributors, every fix credited as co-author.
+
+### Added
+- Cookie value redaction for tokens, API keys, JWTs, and session secrets in `browse cookies` output. Your secrets no longer appear in Claude's context.
+- IPv6 ULA prefix blocking (fc00::/7) in URL validation. Covers the full unique-local range, not just the literal `fd00::`. Hostnames like `fcustomer.com` are not false-positived.
+- Per-tab cancel signaling for sidebar agents. Stopping one tab's agent no longer kills all tabs.
+- Parent process watchdog for the browse server. When Claude Code exits, orphaned browser processes now self-terminate within 15 seconds.
+- Uninstall instructions in README (script + manual removal steps).
+- CSS value validation blocks `url()`, `expression()`, `@import`, `javascript:`, and `data:` in style commands, preventing CSS injection attacks.
+- Queue entry schema validation (`isValidQueueEntry`) with path traversal checks on `stateFile` and `cwd`.
+- Viewport dimension clamping (1-16384) and wait timeout clamping (1s-300s) prevent OOM and runaway waits.
+- Cookie domain validation in `cookie-import` prevents cross-site cookie injection.
+- DocumentFragment-based tab switching in sidebar (replaces innerHTML round-trip XSS vector).
+- `pollInProgress` reentrancy guard prevents concurrent chat polls from corrupting state.
+- 750+ lines of new security regression tests across 4 test files.
+- Supabase migration 003: column-level GRANT restricts anon UPDATE to (last_seen, gstack_version, os) only.
+
+### Fixed
+- Windows: `extraEnv` now passes through to the Windows launcher (was silently dropped).
+- Windows: welcome page serves inline HTML instead of `about:blank` redirect (fixes ERR_UNSAFE_REDIRECT).
+- Headed mode: auth token returned even without Origin header (fixes Playwright Chromium extensions).
+- `frame --url` now escapes user input before constructing RegExp (ReDoS fix).
+- Annotated screenshot path validation now resolves symlinks (was bypassable via symlink traversal).
+- Auth token removed from health broadcast, delivered via targeted `getToken` handler instead.
+- `/health` endpoint no longer exposes `currentUrl` or `currentMessage`.
+- Session ID validated before use in file paths (prevents path traversal via crafted active.json).
+- SIGTERM/SIGKILL escalation in sidebar agent timeout handler (was bare `kill()`).
+
+### For contributors
+- Queue files created with 0o700/0o600 permissions (server, CLI, sidebar-agent).
+- `escapeRegExp` utility exported from meta-commands.
+- State load filters cookies from localhost, .internal, and metadata domains.
+- Telemetry sync logs upsert errors from installation tracking.
+
 ## [0.15.14.0] - 2026-04-05
 
 ### Fixed

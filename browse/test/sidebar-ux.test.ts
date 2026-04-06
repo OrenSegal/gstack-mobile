@@ -441,7 +441,7 @@ describe('browser→sidebar tab sync', () => {
   test('/sidebar-tabs reads activeUrl param and calls syncActiveTabByUrl', () => {
     const handler = serverSrc.slice(
       serverSrc.indexOf("/sidebar-tabs'"),
-      serverSrc.indexOf("/sidebar-tabs'") + 500,
+      serverSrc.indexOf("/sidebar-tabs'") + 700,
     );
     expect(handler).toContain("get('activeUrl')");
     expect(handler).toContain('syncActiveTabByUrl');
@@ -626,7 +626,7 @@ describe('per-tab chat context (sidepanel.js)', () => {
       js.indexOf('function switchChatTab(') + 800,
     );
     expect(fn).toContain('chatDomByTab');
-    expect(fn).toContain('innerHTML');
+    expect(fn).toContain('createDocumentFragment');
   });
 
   test('sendMessage includes tabId in message', () => {
@@ -1253,13 +1253,15 @@ describe('server /welcome endpoint', () => {
     expect(welcomeSection).toContain("'Content-Type': 'text/html");
   });
 
-  test('/welcome redirects to about:blank if no welcome file found', () => {
+  test('/welcome serves fallback HTML if no welcome file found', () => {
     const welcomeSection = serverSrc.slice(
       serverSrc.indexOf("url.pathname === '/welcome'"),
       serverSrc.indexOf("url.pathname === '/health'"),
     );
-    expect(welcomeSection).toContain('302');
-    expect(welcomeSection).toContain('about:blank');
+    // Changed from 302 redirect to about:blank (ERR_UNSAFE_REDIRECT on Windows)
+    // to inline HTML fallback page (PR #822)
+    expect(welcomeSection).toContain('GStack Browser ready');
+    expect(welcomeSection).toContain('status: 200');
   });
 });
 

@@ -1577,7 +1577,8 @@ describe('Cookie import', () => {
   test('cookie-import preserves explicit domain', async () => {
     await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
     const tempFile = '/tmp/browse-test-cookies-domain.json';
-    const cookies = [{ name: 'explicit', value: 'domain', domain: 'example.com', path: '/foo' }];
+    // Domain must match page hostname (127.0.0.1) — cross-domain cookies are now rejected
+    const cookies = [{ name: 'explicit', value: 'domain', domain: '127.0.0.1', path: '/foo' }];
     fs.writeFileSync(tempFile, JSON.stringify(cookies));
 
     const result = await handleWriteCommand('cookie-import', [tempFile], bm);
@@ -1837,7 +1838,7 @@ describe('Chain with cookie-import', () => {
     await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
     const tmpCookies = '/tmp/test-chain-cookies.json';
     fs.writeFileSync(tmpCookies, JSON.stringify([
-      { name: 'chain_test', value: 'chain_value', domain: 'localhost', path: '/' }
+      { name: 'chain_test', value: 'chain_value', domain: '127.0.0.1', path: '/' }
     ]));
     try {
       const commands = JSON.stringify([
