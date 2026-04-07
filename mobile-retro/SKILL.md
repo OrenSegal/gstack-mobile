@@ -1,137 +1,195 @@
 ---
 name: mobile-retro
-description: Mobile ship retrospective — analyze release metrics, crash rates, store reviews, user feedback, and velocity to improve mobile development process.
+preamble-tier: 4
+version: 1.0.0
+description: |
+  Mobile release retrospective. Analyzes crash rates, ANR rates, store reviews, user feedback,
+  and velocity to improve the mobile development process. Run weekly or after each major
+  mobile release stabilizes (1-2 weeks post-ship). (gstack-mobile)
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Grep
+  - AskUserQuestion
+  - WebSearch
+---
+<!-- gstack-mobile: mobile-retro/SKILL.md -->
+
+## Preamble (run first)
+
+```bash
+_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+_MOBILE_PLATFORM=$(~/.claude/skills/gstack/bin/gstack-config get mobile_platform 2>/dev/null || echo "unknown")
+_TEL_START=$(date +%s)
+_SESSION_ID="$$-$(date +%s)"
+echo "BRANCH: $_BRANCH"
+echo "MOBILE_PLATFORM: $_MOBILE_PLATFORM"
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"mobile-retro","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
+```
+
 ---
 
 # /mobile-retro
 
-Run this after a mobile release stabilizes (typically 1-2 weeks post-launch). This skill reviews the release to identify what worked, what didn't, and how to improve the mobile development process.
+Mobile releases are higher stakes than web. A bad release can't be hotfixed in 5 minutes
+— it takes hours to get through App Review, and Play Console updates in 10-30 minutes but
+users don't auto-update. This retro learns from each release to improve the next.
 
-## Use when
+---
 
-- Shipped a new mobile version to production.
-- Want to analyze release health and user feedback.
-- Setting up regular mobile shipping retrospectives.
-- Comparing release performance to previous releases.
-- Identifying patterns in crash reports or store reviews.
-- Improving mobile team velocity and process.
+## Step 0: Gather data
 
-## Inputs
+Before the session, collect:
 
-Collect or infer:
+**Crash data:**
+```bash
+# iOS: check Firebase Crashlytics or Sentry
+# Android: check Play Console -> Crashes & ANRs
+echo "Pull crash reports for the past 2 weeks"
+```
 
-- Platform: `flutter`, `swift`, `kotlin`, or `expo`.
-- Target OS: iOS, Android, or both.
-- Release version: what was shipped.
-- Release date: when it went live.
-- Key metrics: crash rate, ANR rate, session length, DAU before/after.
-- Store feedback: ratings, reviews, support contacts.
-- What changed: major features, bug fixes, or changes in this release.
+**Store data:**
+```bash
+# iOS: App Store Connect -> Ratings and Reviews
+# Android: Play Console -> Statistics -> Ratings
+echo "Pull rating trends and recent reviews"
+```
 
-If platform is missing:
-- Read `~/.gstack/config` or project docs.
-- If still unclear, ask one concise question before proceeding.
+**Release info:**
+- What version shipped? When?
+- What was the main change (feature, fix, update)?
+- How long from code complete to store approval?
 
-## Review standard
+---
 
-### 1. Crash and stability metrics
-- Crash-free sessions (target: 99%+ for stable apps, 95%+ for new apps).
-- ANR rate (Android): target < 0.1%.
-- Crash trends: is crash rate stable, increasing, or decreasing post-release?
-- Specific crash signatures that need hotfixing.
-- Compare to baseline (previous release or industry benchmarks).
+## Step 1: Stability metrics
 
-### 2. Store reviews and ratings
-- Rating change: up, down, or flat.
-- Key themes in recent reviews (positive and negative).
-- Any one-star reviews requiring immediate response.
-- Comparison to competitor ratings.
-- Review volume: are more people reviewing?
+For the retro period (typically 2 weeks):
 
-### 3. User feedback and support
-- Support ticket volume change.
-- Common issues reported (workarounds, work-stopping bugs).
-- Feature requests that appear repeatedly.
-- User sentiment: happy, frustrated, neutral?
+**Crash metrics:**
+- Crash-free sessions: target >99% (iOS), >99.5% (Android)
+- Crash count: new crash signatures vs recurring
+- ANR rate (Android): target <0.1%
 
-### 4. Engagement and retention
-- DAU/MAU change post-release.
-- Session length and frequency changes.
-- Funnel conversion changes (if measured).
-- Any negative impact on retention metrics.
+**Review the data:**
+- Did any new crash signatures appear post-release?
+- Any crash clusters (same crash happening 100+ times)?
+- Any device-specific issues?
 
-### 5. Release process
-- Time from code complete to store approval.
-- Any submission issues or rejections.
-- Rollout strategy effectiveness (immediate vs phased).
-- Build and submission automation status.
+---
 
-### 6. What went well
-- Celebrate wins: stable launch, positive reviews, fast approval.
-- Identify practices to repeat.
+## Step 2: Store reviews
 
-### 7. What to improve
-- Specific issues that caused problems.
-- Process gaps (testing, review, monitoring).
-- Communication gaps (with users, within team).
-- Planning gaps (underestimating effort or risk).
+**iOS:**
+- Rating change (up/down/flat)
+- Count of 1-2 star reviews post-release
+- Key themes in negative reviews
 
-### 8. Action items
-- Concrete improvements for next release.
-- Assign owners and timelines.
-- Track action item completion.
+**Android:**
+- Rating change
+- Reviews mentioning crashes, bugs, or issues
+- Any policy warnings from Play
 
-## Output format
+---
 
-Use this exact structure:
+## Step 3: User feedback
 
-### Verdict
-One paragraph summarizing the release health:
-- `SUCCESS` — stable release, positive metrics
-- `WARNING` — some issues, need monitoring
-- `FAIL` — serious problems requiring hotfix
+- Support ticket volume change (up/down/flat)
+- Common issues in tickets
+- Any feature requests that came up repeatedly
 
-### Key metrics
-Bullets with actual numbers (crash rate, rating, etc.).
+---
 
-### What went well
-Bullets on positive outcomes and practices to repeat.
+## Step 4: Release process
 
-### What to improve
-Bullets on issues and process gaps.
+- Time from code complete to TestFlight/Play internal: {_} hours/days
+- Time from upload to App Store/Play approval: {_} hours/days
+- Any submission issues or rejections?
+- Rollout strategy: immediate / phased / manual
 
-### Action items
-Specific, assigned, time-boxed improvements for next release.
+---
 
-### Platform-specific notes
-Split into:
-- `iOS`
-- `Android`
-- `Flutter / shared`
-Only include sections that apply.
+## Step 5: What went well
 
-## Style
+- Celebrate wins: stable launch, fast approval, positive reviews
+- What practices should we repeat?
 
-- Be direct and specific.
-- Focus on actionable insights, not just data.
-- Celebrate wins but don't sugarcoat problems.
-- Make action items specific enough to actually do.
-- Compare to previous releases when possible.
+List specific things that worked:
+1.
+2.
+3.
 
-## Mobile-specific checks
+---
 
-- Compare iOS vs Android metrics if both are shipped.
-- Track Play Store vs App Store differences.
-- Note any device-specific issues (certain models, OS versions).
-- Consider regional differences if applicable.
+## Step 6: What to improve
 
-## Examples
+- What went wrong or could be better?
+- Process gaps (testing, review, monitoring)
+- Communication gaps
+- Planning gaps
 
-Good prompts:
-- `/mobile-retro review the v2.5 release for crash rate and store reviews`
-- `/mobile-retro analyze this Flutter app launch for improvement areas`
-- `/mobile-retro set up a regular mobile release retrospective process`
+List specific improvements:
+1.
+2.
+3.
 
-Bad prompts:
-- `/mobile-retro review the app`
-- `/mobile-retro check how it went`
+---
+
+## Step 7: Action items
+
+For each improvement above, create an action:
+
+| Action | Owner | Due |
+|--------|-------|-----|
+| | | |
+| | | |
+
+---
+
+## Step 8: Output format
+
+MOBILE RETRO
+═══════════════════════════════════════════════════════════
+Period: {date range}
+Version: {version}
+
+STABILITY
+- Crash-free sessions: {_}%
+- New crash signatures: {N}
+- ANR rate (Android): {_}%
+
+STORE
+- iOS rating: {_} (was {_})
+- Android rating: {_} (was {_})
+- 1-2 star reviews: {N}
+
+RELEASE
+- Code to TestFlight: {_} hours
+- Upload to approval: {_} hours
+
+WHAT WENT WELL
+- {item 1}
+- {item 2}
+
+WHAT TO IMPROVE
+- {item 1}
+- {item 2}
+
+ACTION ITEMS
+- {action} ({owner}, {due})
+
+VERDICT: SUCCESS / WARNING / NEEDS ATTENTION
+═══════════════════════════════════════════════════
+
+Save to `~/.gstack/projects/<slug>/mobile-retro-{date}.md` for history.
+
+---
+
+## Step 9: Completion
+
+```bash
+_TEL_END=$(date +%s)
+_TEL_DUR=$(( _TEL_END - _TEL_START ))
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"mobile-retro","event":"completed","branch":"'"$(git branch --show-current 2>/dev/null || echo unknown)"'","outcome":"OUTCOME","duration_s":"'"$_TEL_DUR"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null || true
+```

@@ -1,139 +1,200 @@
 ---
 name: jank-removal
-description: Mobile performance tuning — identify and fix jank, dropped frames, memory issues, slow startups, and battery drain in Flutter, Swift, and Kotlin apps.
+preamble-tier: 4
+version: 1.0.0
+description: |
+  Mobile performance diagnosis and fixing. Measures cold start time, detects dropped frames
+  (jank), finds memory leaks, identifies battery drain sources, and optimizes list scroll.
+  Run AFTER /mobile-qa when performance regresses, or standalone when users report lag.
+  (gstack-mobile)
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Grep
+  - AskUserQuestion
+  - WebSearch
+---
+<!-- gstack-mobile: jank-removal/SKILL.md -->
+
+## Preamble (run first)
+
+```bash
+_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+_MOBILE_PLATFORM=$(~/.claude/skills/gstack/bin/gstack-config get mobile_platform 2>/dev/null || echo "unknown")
+_TEL_START=$(date +%s)
+_SESSION_ID="$$-$(date +%s)"
+echo "BRANCH: $_BRANCH"
+echo "MOBILE_PLATFORM: $_MOBILE_PLATFORM"
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"jank-removal","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
+```
+
 ---
 
 # /jank-removal
 
-Run this when users report slow, stuttering, or unresponsive behavior. This skill helps diagnose and fix performance issues that degrade the user experience.
+Mobile performance is UX. Users who experience jank churn at 2x the rate of smooth apps.
+This skill finds and fixes the specific things that make your app feel slow.
 
-## Use when
+---
 
-- UI stuttering, dropped frames, or inconsistent frame times.
-- Slow app startup (cold or warm).
-- High memory usage, memory leaks, or OOM crashes.
-- Battery drain from excessive background activity or animations.
-- Slow list scrolling or rendering of large datasets.
-- Profile-guided optimization needs.
-- Post-launch performance regression detected.
+## Step 0: Identify symptom
 
-## Inputs
+Ask the user or check the issue:
+- **Cold start slow?** (time from tap to interactive)
+- **Jank during scroll?** (dropped frames, stuttering)
+- **Memory growth?** (app gets slower over time)
+- **Battery drain?** (unusual background activity)
+- **Specific screen slow?** (which screen?)
 
-Collect or infer:
+---
 
-- Platform: `flutter`, `swift`, `kotlin`, or `expo`.
-- Target OS: iOS, Android, or both.
-- What changed: diff, PR, or feature that introduced the issue.
-- Symptoms: startup time, FPS during specific actions, memory over time.
-- Profiling data: if available (perfetto, instruments, Flutter DevTools, systrace).
-- Device targeting: specific devices or OS versions affected.
+## Step 1: Cold start measurement
 
-If platform is missing:
-- Read `~/.gstack/config` or project docs.
-- If still unclear, ask one concise question before proceeding.
+```bash
+# iOS: measure with Instruments or quick timing
+echo "iOS: Use Flutter DevTools timeline or manual stopwatch"
+echo "Target: <1s on iPhone 13+, <2s on mid-range Android"
 
-## Review standard
+# Android: use ADB
+adb shell am force-stop $(grep applicationId android/app/build.gradle 2>/dev/null | head -1 | awk -F'"' '{print $2}') 2>/dev/null
+adb shell am start-activity -W -n "$(grep applicationId android/app/build.gradle | head -1 | awk -F'"' '{print $2}')/$(grep mainActivity AndroidManifest.xml | head -1)" 2>/dev/null | grep TotalTime
+```
 
-### 1. Frame timing and jank
-- Target 60fps (or 120fps on ProMotion/high-refresh), identify frames exceeding 16ms (or 8ms).
-- Check for unnecessary rebuilds (Flutter: setState in build, excessive const removal).
-- Verify repaint boundary usage where appropriate.
-- Identify layout thrashing (multiple passes to resolve size/position).
-- Check for heavy compositing (shadows, blurs, clipRRect in loops).
+**Targets:**
+- iOS: < 1 second to interactive
+- Android: < 2 seconds to interactive (mid-range device)
 
-### 2. Startup performance
-- Measure cold startup (no process), warm startup (process alive), hot restart (Dart VM warm).
-- Identify main isolate blocking work during startup.
-- Lazy-load non-critical initialization.
-- Optimize app icon and splash (or remove custom splash entirely).
-- A/B test any pre-warming or predictive initialization.
+If over: check for synchronous initialization, heavy widgets in `main()`, large splash.
 
-### 3. Memory management
-- Track memory growth over time (leaks).
-- Identify retained objects not being released (listeners, callbacks, streams).
-- Use image caching with size limits.
-- Implement pagination for large lists.
-- Dispose controllers, streams, and subscriptions in Flutter.
-- Check for retain cycles in Swift/Kotlin (weak references, proper deinit).
+---
 
-### 4. List and scroll performance
-- Use lazy loading (ListView.builder, RecyclerView, UICollectionView).
-- Implement item extent estimation.
-- Avoid layout during scroll (pre-cache off-screen items moderately).
-- Use stable keys in Flutter to preserve widget state.
-- Check image loading and decoding on background thread.
+## Step 2: Jank detection (scroll/animation)
 
-### 5. Animation performance
-- Use dedicated animation drivers (AnimationController, CADisplayLink, ValueAnimator).
-- Avoid layout changes during animation.
-- Use transform/opacity for cheap animations, not repaint-heavy properties.
-- Check for over-animation (animations firing unnecessarily).
-- Respect reduced motion accessibility setting.
+```bash
+# Flutter: use DevTools Performance view
+# flutter run --profile
+# Open DevTools -> Performance -> record 30s of scrolling
 
-### 6. Battery and background
-- Minimize wake locks, GPS, or network in background.
-- Use background fetch sparingly or rely on push notifications.
-- Check for unnecessary background refresh.
-- Use efficient network batching (fewer requests, larger payloads).
-- Defer non-critical work until device is charging.
+# Or: check for common jank patterns in code
+grep -r "setState\|StreamBuilder\|FutureBuilder" lib/ --include="*.dart" -l 2>/dev/null | head -10
+grep -r "Builder\|builder:" lib/ --include="*.dart" -l 2>/dev/null | head -10
+```
 
-### 7. Profiling and tools
-- iOS: Time Profiler, Allocations, Core Animation FPS meter.
-- Android: Perfetto, Android Profiler, systrace.
-- Flutter: DevTools timeline, performance view, memory view.
-- Benchmark with release build (debug has extra overhead).
+Common jank causes:
+- [ ] `setState` in `build()` — use `const`, memoize, or move to provider notifier
+- [ ] Missing `const` constructors on static widgets
+- [ ] `ListView` with `children` instead of `ListView.builder`
+- [ ] Images without `cacheWidth`/`cacheHeight` — decoded at full size
+- [ ] Unnecessary repaints — missing `RepaintBoundary` on static areas
 
-## Output format
+---
 
-Use this exact structure:
+## Step 3: Memory leak detection
 
-### Verdict
-One paragraph with a blunt recommendation:
-- `PASS`
-- `PASS WITH WARNINGS`
-- `FAIL`
+```bash
+# Flutter: use DevTools Memory view
+# flutter run --profile
+# Open DevTools -> Memory -> track allocations over time
 
-### Critical issues
-Bullets only. Include only issues causing user-visible problems.
+# Check for common leak patterns
+grep -r "StreamSubscription\|controller\.add\|listener" lib/ --include="*.dart" -l 2>/dev/null | head -10
 
-### Warnings
-Bullets only. Important but non-blocking.
+# Check for missing dispose
+grep -r "dispose\|onDispose\|close" lib/ --include="*.dart" -l 2>/dev/null | head -10
+```
 
-### Platform-specific notes
-Split into:
-- `iOS`
-- `Android`
-- `Flutter / shared`
-Only include sections that apply.
+Common leaks:
+- [ ] `StreamSubscription` not cancelled in `dispose()`
+- [ ] `AnimationController` not disposed
+- [ ] `TextEditingController` not disposed
+- [ ] Listeners not removed (bloc, ChangeNotifier)
+- [ ] Captured closures holding `this`
 
-### Recommended fix
-Give the most opinionated path to fix the issue.
+---
 
-### Build checklist
-Provide a short, execution-ready checklist.
+## Step 4: Battery drain investigation
 
-## Style
+```bash
+# Check for background activity
+grep -r "Timer\|PeriodicTimer\|BackgroundTasks\|workmanager\|flutter_background_service" \
+  lib/ --include="*.dart" -l 2>/dev/null | head -10
 
-- Be direct and specific.
-- Prefer measurement over guesswork.
-- Don't optimize prematurely — fix user-visible problems first.
-- Flag issues that will get worse at scale (more data, more users).
-- Consider battery impact as a first-class concern.
+# Check for excessive network calls
+grep -r "timer\|interval\|periodic" lib/ --include="*.dart" -l 2>/dev/null | head -10
+```
 
-## Mobile-specific checks
+Battery killers:
+- [ ] Background timers running too frequently
+- [ ] Location updates in background without significant movement
+- [ ] Continuous network polling
+- [ ] Excessive analytics events (batching not used)
+- [ ] Animations that don't respect reduced motion
 
-- Release build performance (debug is not representative).
-- Test on low-end devices, not just flagship.
-- Frame rate in sustained use, not just initial interaction.
-- Memory under typical usage patterns, not just fresh launch.
+---
 
-## Examples
+## Step 5: List scroll optimization
 
-Good prompts:
-- `/jank-removal fix the scrolling jank in this list`
-- `/jank-removal improve cold startup time for this Flutter app`
-- `/jank-removal diagnose high memory usage after extended use`
+```bash
+# Check list implementation
+grep -r "ListView\|ListView.builder\|SliverList\|RecyclerView" lib/ --include="*.dart" -l 2>/dev/null | head -10
 
-Bad prompts:
-- `/jank-removal make it faster`
-- `/jank-removal optimize performance`
+# Check for images in lists
+grep -r "Image\|CachedNetworkImage\|network" lib/ --include="*.dart" -l 2>/dev/null | head -10
+```
+
+List optimizations:
+- [ ] Use `ListView.builder` (lazy loading), not `ListView` with children array
+- [ ] Images in lists MUST have `cacheWidth`/`cacheHeight` or `fit: BoxFit.cover`
+- [ ] Use `AutomaticKeepAliveClientMixin` if keeping items alive
+- [ ] Pagination: load more when within 5-10 items of end
+
+---
+
+## Step 6: Platform-specific checks
+
+**iOS:**
+- [ ] Use `debugPrint` sparingly in release builds
+- [ ] No `print()` statements in production
+- [ ] Test on actual device, not simulator (simulator is faster)
+
+**Android:**
+- [ ] `minifyEnabled true` in release (R8 removes dead code)
+- [ ] `shrinkResources true` removes unused resources
+- [ ] Test on mid-range device (Pixel 6a), not flagship
+
+**Flutter:**
+- [ ] Run in profile mode (`flutter run --profile`), not debug
+- [ ] Profile in DevTools shows actual frame times
+
+---
+
+## Step 7: Output format
+
+JANK REMOVAL REPORT
+═══════════════════════════════════════════════════════════
+Symptom: {cold start / scroll jank / memory / battery / specific screen}
+
+Root causes found:
+1. {issue} - {file:line} - {fix}
+2. ...
+
+Quick wins available: YES / NO
+Estimated improvement: {% or time reduction}
+
+Next steps:
+1. {first fix to apply}
+2. {second fix to apply}
+
+VERDICT: FIXED / NEEDS MORE WORK / UNABLE TO REPRODUCE
+═══════════════════════════════════════════════════════════
+
+---
+
+## Step 8: Completion
+
+```bash
+_TEL_END=$(date +%s)
+_TEL_DUR=$(( _TEL_END - _TEL_START ))
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"jank-removal","event":"completed","branch":"'"$(git branch --show-current 2>/dev/null || echo unknown)"'","outcome":"OUTCOME","duration_s":"'"$_TEL_DUR"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null || true
+```
