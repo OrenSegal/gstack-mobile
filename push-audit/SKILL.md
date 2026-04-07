@@ -3,15 +3,16 @@ name: push-audit
 preamble-tier: 4
 version: 1.0.0
 description: |
-  Push notification implementation audit. Checks permission timing, payload content,
-  frequency caps, opt-out handling, rich notification support, and platform compliance.
-  Run AFTER /analytics-audit if push notifications were added, or standalone when
-  investigating notification issues. (gstack-mobile)
+  Audits push notification implementation and strategy. Checks APNS/FCM setup, permission
+  ask timing, deep link routing on tap, tracking, content personalization, and delivery
+  timing. Also reviews the notification strategy against retention benchmarks (too many
+  pushes = uninstall). Run on any branch touching notification code. (gstack-mobile)
 allowed-tools:
   - Bash
   - Read
-  - Write
   - Grep
+  - Glob
+  - Write
   - AskUserQuestion
 ---
 <!-- gstack-mobile: push-audit/SKILL.md -->
@@ -32,192 +33,215 @@ echo "MOBILE_PLATFORM: $_MOBILE_PLATFORM"
 
 # /push-audit
 
-Push is the most powerful retention tool in mobile — and the fastest way to lose users
-if done wrong. This audit catches the things that cause opt-outs, low delivery, or
-App Store rejection.
+Push notifications are the highest-retention lever in mobile. They are also the fastest
+path to an uninstall. This audit covers both the technical implementation (will it actually
+deliver?) and the strategy (will it make users come back, or will it make them delete the app?).
 
 ---
 
-## Step 0: Identify push implementation
+## Step 0: Detect push implementation
 
 ```bash
-# Find push notification code
-grep -r "push\|notification\|FCM\|APNs\|messaging\|OneSignal" \
-  lib/ src/ --include="*.dart" --include="*.tsx" --include="*.swift" --include="*.kt" -l 2>/dev/null | head -10
+# Flutter: detect push provider
+grep -rn "firebase_messaging\|flutter_local_notifications\|onesignal\|braze\|customer.io\|airship" \
+  pubspec.yaml lib/ --include="*.dart" 2>/dev/null | head -10
 
-# Flutter packages
-cat pubspec.yaml 2>/dev/null | grep -E "firebase_messaging|flutter_local_notifications|onesignal" | head -5
+# Expo: detect push provider
+cat package.json 2>/dev/null | grep -E "expo-notifications|onesignal|braze" | head -5
 
-# iOS capabilities
-grep -r "Push Notifications\|Remote notifications" ios/ --include="*.plist" --include="*.entitlements" 2>/dev/null | head -5
+# Swift: detect push setup
+grep -rn "UNUserNotificationCenter\|UNNotification\|APNs\|application.*registerForRemoteNotifications" \
+  --include="*.swift" -r . 2>/dev/null | head -10
+
+# Kotlin: detect push setup
+grep -rn "FirebaseMessaging\|NotificationManager\|FCM\|NotificationChannel" \
+  --include="*.kt" -r . 2>/dev/null | head -10
+
+# Check for push handler
+grep -rn "onMessage\|onMessageOpenedApp\|getInitialMessage\|didReceiveRemoteNotification\|onNotificationTap" \
+  lib/ src/ --include="*.dart" --include="*.ts" --include="*.swift" --include="*.kt" \
+  -r . 2>/dev/null | head -15
 ```
-
-Identify:
-- Push provider (Firebase FCM, OneSignal, raw APNs, etc.)
-- Notification types (transactional, marketing, news)
-- Current opt-out rate if known
 
 ---
 
-## Step 1: Permission timing
+## Step 1: Technical implementation audit
 
-The #1 push mistake: asking for notification permission on first launch.
+### APNS / FCM registration
+
+Check that the push token registration flow is correct:
 
 ```bash
-# Find permission request in app
-grep -r "requestPermission\|requestAuthorization\|registerForRemoteNotifications" \
-  lib/ src/ --include="*.dart" --include="*.tsx" --include="*.swift" --include="*.kt" -l 2>/dev/null | head -5
+# Flutter / Firebase: token refresh handler
+grep -rn "onTokenRefresh\|getToken\|FirebaseMessaging.instance.getToken" \
+  lib/ --include="*.dart" 2>/dev/null | head -10
 
-# Find where it's called (in which screen/on what trigger)
-grep -r -B5 "requestPermission\|requestAuthorization" \
-  lib/ src/ --include="*.dart" --include="*.tsx" --include="*.swift" --include="*.kt" 2>/dev/null | head -20
+# Swift: token registration
+grep -rn "didRegisterForRemoteNotificationsWithDeviceToken\|application.*didRegisterFor" \
+  --include="*.swift" -r . 2>/dev/null | head -5
+
+# Kotlin: FCM token
+grep -rn "onNewToken\|getToken\b" --include="*.kt" -r . 2>/dev/null | head -5
 ```
 
-Check:
-- [ ] Permission is NOT requested on first launch. EVER.
-- [ ] Permission is requested AFTER user demonstrates intent:
-  - After completing onboarding (step 3+)
-  - After first purchase
-  - After first meaningful action
-  - After 2-3 sessions of active use
-- [ ] Pre-prompt: in-app explanation shown BEFORE system dialog ("We'll notify you when...")
+Required:
+- Token refresh is handled (tokens rotate — old token = missed notifications)
+- Token is sent to the backend on every refresh, not just on first launch
+- Token is associated with the authenticated user ID after login
+  (unauthenticated token = notification goes to wrong device after logout)
 
----
+Flag if token refresh is not handled or if token is only registered once.
 
-## Step 2: Notification content
-
-Check payload and message content:
+### Notification channel setup (Android)
 
 ```bash
-# Find notification handling code
-grep -r "notification\|RemoteMessage\|UNNotification" \
-  lib/ src/ --include="*.dart" --include="*.tsx" --include="*.swift" -l 2>/dev/null | head -10
-
-# Find notification content templates (title, body)
-grep -r "title.*notification\|body.*notification\|content-title\|mutable-content" \
-  lib/ src/ --include="*.dart" --include="*.tsx" -r . 2>/dev/null | head -20
+# Android requires notification channels for API 26+
+grep -rn "NotificationChannel\|createNotificationChannel" --include="*.kt" -r . 2>/dev/null | head -10
+grep -rn "importance\b" --include="*.kt" -r . 2>/dev/null | grep "NotificationManager\|IMPORTANCE" | head -5
 ```
 
-**Requirements:**
-- Title: < 50 characters, meaningful without body
-- Body: < 100 characters (truncated on lock screen)
-- No PII in notification content (not "Your order is ready, John")
-- No sensitive data visible on lock screen
-- Images: optional, must be appropriate size (<1MB)
-- Actions: optional, must be meaningful
+Required for Android O (API 26) and above:
+- Notification channel created with appropriate importance level
+- `IMPORTANCE_DEFAULT` for most notifications
+- `IMPORTANCE_HIGH` only for urgent/time-sensitive (alerts user from lock screen)
+- Channel name and description user-visible — make them meaningful
 
----
-
-## Step 3: Frequency and throttling
-
-Check for frequency limits:
+### Foreground handling
 
 ```bash
-# Find notification triggers
-grep -r "schedule\|deliver\|throttle\|rate.*limit\|batch" \
-  lib/ src/ --include="*.dart" --include="*.tsx" --include="*.swift" --include="*.kt" -r . 2>/dev/null | head -10
+grep -rn "onMessage\b\|didReceiveNotification\|UNUserNotificationCenterDelegate" \
+  lib/ src/ --include="*.dart" --include="*.ts" --include="*.swift" -r . 2>/dev/null | head -10
 ```
 
-**Rules:**
-- No more than 3-5 notifications per user per day (including all types)
-- No notifications during quiet hours (typically 9pm - 7am local time)
-- Batch multiple events instead of individual notifications
-- No repetitive notifications (same message every X minutes)
+Required: When the app is in the foreground and a notification arrives, the app must
+handle it explicitly. On iOS, the system does NOT show the notification banner if the
+app is in the foreground — the app must present it locally or handle it in-app.
+Flag if `UNUserNotificationCenterDelegate.userNotificationCenter(_:willPresent:)` is missing.
 
----
-
-## Step 4: Opt-out handling
-
-Check that opt-out works correctly:
+### Background and terminated state
 
 ```bash
-# Find unsubscribe/notification settings
-grep -r "unsubscribe\|opt.*out\|notification.*setting\|channel.*disable" \
-  lib/ src/ --include="*.dart" --include="*.tsx" --include="*.swift" --include="*.kt" -r . 2>/dev/null | head -10
+grep -rn "getInitialNotification\|getInitialMessage\|launchNotification\|onLaunchNotification" \
+  lib/ src/ --include="*.dart" --include="*.ts" -r . 2>/dev/null | head -5
 ```
 
-- [ ] Unsubscribe link available in every notification (or in-app settings)
-- [ ] Unsubscribing works immediately — not "will take 24 hours"
-- [ ] Can re-enable notifications in app settings (opt-in is allowed)
-- [ ] No deceptive unsubscribe patterns (hidden button, extra steps)
+Three states to handle:
+1. **Foreground** — app open, notification arrives
+2. **Background** — app suspended, user taps notification
+3. **Terminated** — app not running, user taps notification from lock screen
 
----
+`getInitialNotification()` / `getInitialMessage()` handles the terminated state.
+Flag if it's missing — any deep link from a terminated-state notification will silently fail.
 
-## Step 5: Rich notifications and actions
-
-If implemented:
+### Deep link routing on tap
 
 ```bash
-# Find action buttons
-grep -r "action\|category\|UNNotificationCategory\|NotificationChannel" \
-  lib/ src/ --include="*.dart" --include="*.swift" --include="*.kt" -r . 2>/dev/null | head -10
-
-# Find image/carousel support
-grep -r "image\|attachment\|carousel\|breakpoint" \
-  lib/ src/ --include="*.dart" --include="*.tsx" -r . 2>/dev/null | head -10
+grep -rn "onMessageOpenedApp\|notificationTapped\|handleNotificationTap\|navigateTo\b" \
+  lib/ src/ --include="*.dart" --include="*.ts" -r . 2>/dev/null | head -10
 ```
 
-- [ ] Action buttons are useful, not just "Dismiss"
-- [ ] Deep links from notifications go to the right screen
-- [ ] Rich notifications (images, actions) have fallbacks for devices that don't support them
-- [ ] Interactive notifications respect system limits
+Required:
+- Tapping a notification routes the user to the relevant content, not the app home screen
+- Deep link data is extracted from the notification payload
+- Navigation happens AFTER auth check (notification tap while logged out should route to login first, then redirect to content after login)
+- The routing works in all three states (foreground, background, terminated)
 
 ---
 
-## Step 6: Platform-specific checks
+## Step 2: Strategy audit
 
-**iOS:**
-- [ ] Uses `UNUserNotificationCenter` for iOS 10+
-- [ ] Handles `willPresent` for foreground notifications
-- [ ] Critical alerts used only for actual emergencies (spamming = rejection)
-- [ ] Notification categories registered for actionable notifications
+### Notification types inventory
 
-**Android:**
-- [ ] Uses `NotificationChannel` (Oreo+)
-- [ ] Importance level appropriate (high for important, default for normal)
-- [ ] Badging handled correctly
-- [ ] Custom sound respects Do Not Disturb
+Ask the user to list every notification type they send (or extract from backend code
+if it's in this repo). For each type:
 
-**Flutter:**
-- [ ] Uses `flutter_local_notifications` or `firebase_messaging`
-- [ ] Handles `onMessage`, `onLaunch`, `onBackgroundMessage` correctly
-- [ ] Notification permissions requested at right time (not on launch)
+| Type | Trigger | User benefit | Urgency | Frequency |
+|---|---|---|---|---|
+| e.g. "Expiry reminder" | Item expires in 2 days | Prevents food waste | Low | Daily max 1 |
+
+Evaluate each type:
+- **Transactional** (order confirmed, payment received) — always acceptable
+- **Behavioral trigger** (your streak is at risk) — high value, use with care
+- **Promotional** (sale today only) — low tolerance, require explicit opt-in
+- **Re-engagement** (we miss you) — often backfires, do not use more than once a month
+
+### Frequency check
+
+Industry benchmarks for consumer apps:
+- > 3 pushes/week: uninstall rate increases significantly for most app categories
+- 1-2 pushes/week: optimal for most retention-focused apps
+- Daily or more: acceptable only for apps with daily-use habit (fitness, language learning, news)
+
+If the notification types would result in >3/week for the average user, flag as WARN.
+
+### Personalization check
+
+Are notifications personalized? "Your onions expire Sunday" is 10x more effective than
+"You have expiring items." Generic notifications train users to ignore. Personalized
+notifications drive re-opens.
+
+Check if notifications include:
+- User's name or item names
+- Specific counts or dates
+- Actionable CTA in the notification body (not just the app name)
+
+### Opt-in segmentation
+
+Check if notification types are independently toggleable in app settings. Users should
+be able to disable promotional notifications without disabling transactional ones.
+
+```bash
+grep -rn "notification.*setting\|push.*preference\|notification.*toggle\|notif.*switch" \
+  lib/ src/ --include="*.dart" --include="*.ts" -r . 2>/dev/null | head -10
+```
 
 ---
 
-## Step 7: Output format
+## Step 3: Output
 
 PUSH AUDIT
 ═══════════════════════════════════════════════════════════
-Provider: {Firebase/OneSignal/APNs/other}
-Permission timing: CORRECT / FIRST_LAUNCH / UNKNOWN
-Daily volume: {N} notifications/day per user
 
-Content:
-- Title length: OK / TOO LONG (>50 chars)
-- Body length: OK / TOO LONG (>100 chars)
-- PII present: YES / NO
-- Lock screen safe: YES / NO
+Provider: {Firebase / APNS direct / OneSignal / etc.}
+Platform: {iOS / Android / Both}
 
-Frequency:
-- Daily cap: OBSERVED / NOT SET
-- Quiet hours: RESPECTED / IGNORED
+TECHNICAL IMPLEMENTATION
+Token registration: PASS / FAIL — {notes}
+Token refresh handling: PASS / FAIL
+Android notification channels: PASS / FAIL / N/A
+Foreground handling: PASS / FAIL
+Background tap routing: PASS / FAIL
+Terminated-state routing: PASS / FAIL
+Deep link routing on tap: PASS / FAIL — {notes}
 
-Opt-out: WORKING / NOT IMPLEMENTED / HARMFUL
+STRATEGY
+Notification types: N types
+Estimated frequency: {N/week for average user}
+Personalization: {High / Medium / Low / None}
+Independent opt-out per type: PASS / FAIL
+Critical Issues
 
-Platform compliance: PASS / FAIL
+[CRITICAL] {issue} — {fix}
+...
+Warnings
 
-VERDICT: PASS / FAIL
+[WARN] {issue} — {recommendation}
+...
+
+VERDICT: PASS / NEEDS WORK / CRITICAL (will silently drop notifications)
 ═══════════════════════════════════════════════════════════
-
-If VERDICT is FAIL, fix before `/store-ship`.
 
 ---
 
-## Step 8: Completion
+## Step 4: Completion
 
 ```bash
 _TEL_END=$(date +%s)
 _TEL_DUR=$(( _TEL_END - _TEL_START ))
 ~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"push-audit","event":"completed","branch":"'"$(git branch --show-current 2>/dev/null || echo unknown)"'","outcome":"OUTCOME","duration_s":"'"$_TEL_DUR"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null || true
+if [ "$_TEL" != "off" ]; then
+echo '{"skill":"push-audit","duration_s":"'"$_TEL_DUR"'","outcome":"OUTCOME","session":"'"$_SESSION_ID"'","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
+fi
 ```
+
+Replace `OUTCOME` with `success`, `fail`, or `abort`.

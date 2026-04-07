@@ -1,17 +1,19 @@
 ---
-name: aso
+name:aso
 preamble-tier: 4
 version: 1.0.0
 description: |
-  App Store Optimization audit. Reviews app name, subtitle, keywords, screenshots,
-  description, ratings, and competitive positioning for iOS App Store and Google Play.
-  Run BEFORE /store-ship on initial launch or major version update. (gstack-mobile)
+  App Store Optimization audit and improvement. Reviews title, subtitle, keywords,
+  description, screenshots, preview video, ratings strategy, and A/B testing setup.
+  Benchmarks against top-ranked competitors in your category. Run after each major
+  version ship, when organic downloads plateau, or when launching in a new category.
+  (gstack-mobile)
 allowed-tools:
   - Bash
   - Read
   - Write
-  - AskUserQuestion
   - WebSearch
+  - AskUserQuestion
 ---
 <!-- gstack-mobile:aso/SKILL.md -->
 
@@ -31,186 +33,214 @@ echo "MOBILE_PLATFORM: $_MOBILE_PLATFORM"
 
 # /aso
 
-ASO is the highest-leverage growth channel for mobile apps. A well-optimized listing
-can 2-3x installs without paid spend. This audit ensures your store listing is ready
-for discovery and conversion.
+Downloads are determined before the user touches your app. Title, icon, first two
+screenshots, and the first line of the description — that's what most users see.
+This audit makes every pixel of that impression count.
 
 ---
 
-## Step 0: Gather current listing
+## Step 0: Gather current metadata
 
-Collect current state:
+Ask the user for or read from the project:
 
 ```bash
-echo "Gather current listing data:"
-echo "- iOS: App Store Connect -> App Information"
-echo "- Android: Play Console -> Main store listing"
-echo ""
-echo "Record:"
-echo "- App name:"
-echo "- Subtitle (iOS) / Short description (Android):"
-echo "- Full description:"
-echo "- Keywords (iOS):"
-echo "- Screenshots (which ones, order):"
-echo "- Rating and review count:"
+# App name and bundle ID
+grep -r "CFBundleName\|CFBundleDisplayName" ios/ --include="*.plist" 2>/dev/null | head -3
+grep "applicationId\|namespace" android/app/build.gradle 2>/dev/null | head -3
+
+# Current version for App Store link
+grep "^version:" pubspec.yaml 2>/dev/null | head -1
+
+# Any existing ASO metadata
+find . -name "metadata" -type d 2>/dev/null | head -5
+find . -name "*.json" -path "*/fastlane/*" 2>/dev/null | head -5
 ```
 
-Ask the user for this data or find in project docs.
+Also ask:
+1. What category is the app listed in (primary)?
+2. What are the 3-5 keywords you're currently using?
+3. What are the 2-3 apps you consider direct competitors?
+4. What is the app's core value in one sentence?
 
 ---
 
-## Step 1: App name audit
-
-**Requirements:**
-- Unique, searchable name
-- Includes primary keyword if brand doesn't make it obvious
-- Not too long (<30 characters)
-- No trademark conflicts
-
-**Check:**
-- [ ] Name clearly communicates what the app does
-- [ ] Name is searchable (users can find it with core keyword)
-- [ ] No generic name like "App Name" or "My App"
-
----
-
-## Step 2: Keywords (iOS)
+## Step 1: Competitive keyword research
 
 ```bash
-# Current keyword usage
-echo "Current iOS keywords (100 char limit):"
-echo "Record current keywords:"
+# Research top competitors in the category
+echo "Researching competitor ASO..."
 ```
 
-**Requirements:**
-- All 100 characters used
-- No duplicate or redundant terms
-- Keywords separated by commas (no spaces)
-- No competitor brand names (rejection risk)
-- High-volume + medium-volume mix
+Use WebSearch to research:
+- Top 5 apps in the same category on App Store and Play Store
+- Their titles, subtitles, and keyword fields (where visible)
+- Their review counts and average ratings
+- Their first two screenshot themes (what value do they lead with?)
 
-**Common mistakes:**
-- Repeating the same word with different forms ("run, running, runner")
-- Using stop words ("the", "and", "best" — Apple ignores these)
-- Using competitor names
+Search queries:
+- `"[competitor name] app store keywords ASO"`
+- `"[category] app store optimization keywords 2025"`
+- `"[category] top apps app store 2025"`
+
+Identify:
+- High-volume keywords competitors are ranking for that you are not
+- Long-tail keywords with lower competition that match your value prop
+- Keywords in your category that appear in top-ranked titles and subtitles
 
 ---
 
-## Step 3: Description audit
+## Step 2: Title and subtitle audit
 
-**iOS:**
-- First paragraph is critical (most users don't expand)
-- Lead with the value proposition
-- Feature list in bullet points
-- No keyword stuffing (read naturally)
+**App Store (iOS):**
+- Title: max 30 characters. Must include the primary keyword.
+- Subtitle: max 30 characters. Second most important keyword placement.
+- Character counts matter: every unused character in title/subtitle is a missed keyword slot.
 
-**Android:**
-- First 175 characters visible in search results
-- Primary keyword in first sentence
-- Feature list in bullet points
+**Play Store (Android):**
+- Title: max 30 characters. Keyword weight is highest here.
+- Short description: max 80 characters. Second-most indexed field.
+- The long description also contributes to indexing — keyword density matters.
 
-**Check:**
-- [ ] First sentence hooks the user
-- [ ] Primary features listed
-- [ ] No spelling/grammar errors
-- [ ] Updated recently (not stale)
+Evaluate the current title and subtitle:
+- Does the title include the most searched keyword for the app's core function?
+- Is the subtitle differentiated from the title (not just a tagline)?
+- Are both title and subtitle under the character limit?
+- Is there obvious keyword stuffing (which triggers App Review penalties)?
+
+---
+
+## Step 3: Keyword field audit (iOS only)
+
+iOS has a 100-character keywords field (comma-separated, no spaces around commas).
+
+Rules:
+- Do NOT include the app name — it's already indexed
+- Do NOT include competitor names — against App Store policy
+- Do NOT repeat words already in the title or subtitle
+- Use singular OR plural, not both (the store indexes both automatically)
+- Include misspellings only if the volume justifies it
+- Use all 100 characters
+
+Evaluate current keywords:
+- Are there duplicates with the title/subtitle?
+- Are there low-volume keywords wasting slots?
+- Are there high-volume category keywords missing?
 
 ---
 
 ## Step 4: Screenshots audit
 
-```bash
-echo "Screenshot review checklist:"
-echo "- First 2 screenshots visible without scrolling"
-echo "- Different value prop on each screenshot"
-echo "- Text overlay explains the feature"
-echo "- Works at thumbnail size"
-echo "- Localized for key markets (if applicable)"
-```
+The first two screenshots are visible in search results without expanding. They determine
+click-through rate more than any other element.
 
-**iOS requirements:**
-- 6-10 screenshots (iPhone), 6-10 (iPad separate)
-- Different orientations
-- No device frames
+For each screenshot position, evaluate:
+1. What is the headline message?
+2. Is the benefit (not the feature) communicated at thumbnail size?
+3. Is the CTA or primary action visible?
+4. Is the design premium — does it look like a $10/month app or a free side project?
 
-**Android requirements:**
-- 2-8 screenshots
-- Feature graphic (1024x500)
-- TV banner (for TV Leanback)
+**Framework for effective screenshots:**
 
----
+| Position | Purpose | Pattern |
+|---|---|---|
+| 1 | Hook | Strongest value prop — the one sentence that made you build this |
+| 2 | Proof | Show the feature doing the thing (real UI, real data) |
+| 3 | Second value prop | Second most compelling reason to download |
+| 4 | Social proof | Real reviews, user count, press mentions |
+| 5-10 | Feature depth | Details for high-intent users who want to understand before downloading |
 
-## Step 5: Ratings and reviews
-
-- Current rating: {_}
-- Review count: {_}
-- Recent rating trend: improving / stable / declining
-- Any 1-star reviews needing response?
-
-**Response strategy:**
-- Respond to negative reviews within 24 hours
-- Be professional, not defensive
-- Offer to help (take off-platform)
+**Common mistakes to flag:**
+- Screenshot 1 shows a login screen or empty state (critical)
+- Screenshot text is too small to read at thumbnail size (critical)
+- All screenshots show the same mood/color — no visual variety to hold the eye
+- Feature captions use internal terminology ("AI-powered semantic scanner") instead of benefits ("Never wonder what's expiring next")
 
 ---
 
-## Step 6: Category and competition
+## Step 5: Rating and review strategy
 
 ```bash
-echo "Category analysis:"
-echo "- Primary category: "
-echo "- Secondary categories (if any): "
-echo "- Competitor apps: "
+# Check for review request implementation
+grep -rn "requestReview\|SKStoreReviewController\|ReviewManager\|inAppReview\|AskForReview" \
+  lib/ src/ --include="*.dart" --include="*.ts" --include="*.swift" --include="*.kt" \
+  -r . 2>/dev/null | head -10
 ```
 
-**Check:**
-- Category choice maximizes discoverability
-- Competitors identified for keyword research
-- Differentiation clear in listing
+Check:
+- Is `SKStoreReviewController.requestReview()` (iOS) or `ReviewManager` (Android) called?
+- When is it called? Must be after a positive action (completion, achievement, streak).
+  Never on launch, never after an error, never before value is demonstrated.
+- Is there a negative feedback path? ("Not satisfied → feedback form" prevents bad reviews
+  from hitting the store while capturing feedback)
+- iOS limits: `requestReview()` can only fire 3 times per 365 days per user. Use wisely.
 
 ---
 
-## Step 7: Output format
+## Step 6: Output
 
 ASO AUDIT
 ═══════════════════════════════════════════════════════════
-App: {name}
-Platform: iOS / Android / Both
 
-NAME
-- Name: {current}
-- Issues: NONE / {list}
-- Recommendation: {keep / change}
+App: {name} | Category: {category}
+Store: {App Store / Play Store / Both}
+Date: {date}
 
-KEYWORDS (iOS)
-- Current: {keyword string}
-- Used: {N}/100 chars
-- Issues: NONE / {list}
+CURRENT METADATA QUALITY
 
-DESCRIPTION
-- Hook quality: GOOD / NEEDS WORK
-- Issues: NONE / {list}
+Title: {current title} ({N}/30 chars)
+→ Issue: {does not include primary keyword} OR → ✓ Good
+Subtitle: {current subtitle} ({N}/30 chars)
+→ Issue: {...} OR → ✓ Good
+Keywords (iOS): {N}/100 chars used
+→ Wasted slots: {list}
+→ Missing high-volume: {list}
 
 SCREENSHOTS
-- Count: {N}
-- First 2 showing value: YES / NO
-- Issues: NONE / {list}
+Screenshot 1: {verdict and issue}
+Screenshot 2: {verdict and issue}
 
-RATING
-- Current: {_} stars
-- Review count: {N}
+RATINGS STRATEGY
+Review request implemented: YES / NO
+Placement: {after completion / on launch / missing}
+Issue: {if any}
 
-VERDICT: READY / NEEDS WORK / NOT STARTED
+TOP 3 IMPROVEMENTS (ranked by estimated impact on downloads)
+
+    {change} — {estimated impact: e.g., "3-5x improvement in search impressions"}
+
+    {change} — {estimated impact}
+
+    {change} — {estimated impact}
+
+COMPETITOR KEYWORD GAPS
+Keyword	Competitor using it	Monthly volume (est.)	Difficulty
+{keyword}	{competitor}	{high/med/low}	{high/med/low}
+
+RECOMMENDED TITLE REWRITE
+Current: "{title}"
+Suggested: "{title with primary keyword}" ({N}/30 chars)
+Rationale: {why}
+
+RECOMMENDED SUBTITLE REWRITE
+Current: "{subtitle}"
+Suggested: "{subtitle with secondary keyword}" ({N}/30 chars)
+Rationale: {why}
+
+RECOMMENDED KEYWORDS (iOS, 100 chars)
+{keyword,keyword,keyword,...}
 ═══════════════════════════════════════════════════════════
-
-If VERDICT is NEEDS WORK, prioritize top 5 changes to make before launch.
 
 ---
 
-## Step 8: Completion
+## Step 7: Completion
 
 ```bash
 _TEL_END=$(date +%s)
 _TEL_DUR=$(( _TEL_END - _TEL_START ))
 ~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"aso","event":"completed","branch":"'"$(git branch --show-current 2>/dev/null || echo unknown)"'","outcome":"OUTCOME","duration_s":"'"$_TEL_DUR"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null || true
+if [ "$_TEL" != "off" ]; then
+echo '{"skill":"aso","duration_s":"'"$_TEL_DUR"'","outcome":"OUTCOME","session":"'"$_SESSION_ID"'","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
+fi
 ```
+
+Replace `OUTCOME` with `success`, `fail`, or `abort`.
