@@ -1,142 +1,216 @@
 ---
 name: aso
-description: App Store Optimization audit — review app listing, keywords, screenshots, metadata, ratings, and competitive positioning for iOS App Store and Google Play.
+preamble-tier: 4
+version: 1.0.0
+description: |
+  App Store Optimization audit. Reviews app name, subtitle, keywords, screenshots,
+  description, ratings, and competitive positioning for iOS App Store and Google Play.
+  Run BEFORE /store-ship on initial launch or major version update. (gstack-mobile)
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - AskUserQuestion
+  - WebSearch
+---
+<!-- gstack-mobile:aso/SKILL.md -->
+
+## Preamble (run first)
+
+```bash
+_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+_MOBILE_PLATFORM=$(~/.claude/skills/gstack/bin/gstack-config get mobile_platform 2>/dev/null || echo "unknown")
+_TEL_START=$(date +%s)
+_SESSION_ID="$$-$(date +%s)"
+echo "BRANCH: $_BRANCH"
+echo "MOBILE_PLATFORM: $_MOBILE_PLATFORM"
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"aso","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
+```
+
 ---
 
 # /aso
 
-Run this before `/store-ship` and after `/onboarding-audit`. This skill audits your app store presence to ensure maximum discoverability and conversion from search impressions to installs.
+ASO is the highest-leverage growth channel for mobile apps. A well-optimized listing
+can 2-3x installs without paid spend. This audit ensures your store listing is ready
+for discovery and conversion.
 
-## Use when
+---
 
-- Preparing for initial App Store / Play launch.
-- Updating store listing for a new version.
-- Investigating low download numbers or poor search ranking.
-- Researching competitors for keyword opportunities.
-- Optimizing screenshots and preview videos for conversion.
-- Setting up ASO tracking and monitoring.
-- Reviewing a PR that changes store listing assets.
+## Step 0: Gather current listing
 
-## Inputs
+Collect current state:
 
-Collect or infer:
+```bash
+echo "Gather current listing data:"
+echo "- iOS: App Store Connect -> App Information"
+echo "- Android: Play Console -> Main store listing"
+echo ""
+echo "Record:"
+echo "- App name:"
+echo "- Subtitle (iOS) / Short description (Android):"
+echo "- Full description:"
+echo "- Keywords (iOS):"
+echo "- Screenshots (which ones, order):"
+echo "- Rating and review count:"
+```
 
-- Platform: `flutter`, `swift`, `kotlin`, or `expo`.
-- Target OS: iOS, Android, or both.
-- App name and current subtitle/tagline.
-- Current keyword set (iOS) or short description (Android).
-- Primary category and any secondary categories.
-- Competitor apps (2-3 direct competitors).
-- Current ratings and review count.
-- Download/install volume if known.
+Ask the user for this data or find in project docs.
 
-If platform is missing:
-- Read `~/.gstack/config` or project docs.
-- If still unclear, ask one concise question before proceeding.
+---
 
-## Review standard
+## Step 1: App name audit
 
-### 1. App name and brand
-- Name is memorable, spellable, and searchable.
-- Name includes primary keyword if not already obvious from brand.
-- No trademark conflicts or policy violations.
-- Subtitle (iOS) / tagline (Android) expands on name with secondary keywords.
-- Name is unique enough to avoid confusion or ambiguity.
+**Requirements:**
+- Unique, searchable name
+- Includes primary keyword if brand doesn't make it obvious
+- Not too long (<30 characters)
+- No trademark conflicts
 
-### 2. Keywords (iOS)
-- 100 characters fully utilized.
-- No redundant or overlapping terms.
-- High-volume terms balanced with medium-volume, lower-competition terms.
-- No competitor brand names (rejection risk).
-- Localization considered for different markets.
+**Check:**
+- [ ] Name clearly communicates what the app does
+- [ ] Name is searchable (users can find it with core keyword)
+- [ ] No generic name like "App Name" or "My App"
 
-### 3. Description
-- iOS: First paragraph is the "hook" — most users don't expand.
-- Android: First 175 characters visible in search — critical.
-- Primary value prop in first 2 sentences.
-- Feature list uses bullet points, not walls of text.
-- No keyword stuffing (reads naturally).
-- Updated regularly with new features.
+---
 
-### 4. Screenshots and preview
-- First 2-3 screenshots are your "ad" — show the best feature.
-- Different screenshots show different value props.
-- Localized screenshots for key markets.
-- Text overlay explains what's happening (if not obvious).
-- Video preview (if used) is polished and shows real UI.
-- No device frames (against guidelines on some stores).
+## Step 2: Keywords (iOS)
 
-### 5. Ratings and reviews
-- Rating is visible in search results — need 4+ to compete.
-- Response rate to reviews is high.
-- Negative reviews addressed professionally.
-- Review volume supports conversion (need 50+ for social proof).
-- Recent reviews reflect current version quality.
+```bash
+# Current keyword usage
+echo "Current iOS keywords (100 char limit):"
+echo "Record current keywords:"
+```
 
-### 6. Category and competitors
-- Category choice maximizes discoverability.
-- Competitor analysis reveals keyword gaps.
-- Differentiation is clear in listing.
+**Requirements:**
+- All 100 characters used
+- No duplicate or redundant terms
+- Keywords separated by commas (no spaces)
+- No competitor brand names (rejection risk)
+- High-volume + medium-volume mix
 
-### 7. Localization
-- At minimum, English (US) metadata is excellent.
-- Top 2-3 markets have localized screenshots.
-- Consider localized keywords for non-English markets.
+**Common mistakes:**
+- Repeating the same word with different forms ("run, running, runner")
+- Using stop words ("the", "and", "best" — Apple ignores these)
+- Using competitor names
 
-### 8. Store-specific
-- iOS: App previews (video) optimized, privacy nutrition labels accurate.
-- Android: Feature graphic is compelling, early access/beta not enabled in production.
+---
 
-## Output format
+## Step 3: Description audit
 
-Use this exact structure:
+**iOS:**
+- First paragraph is critical (most users don't expand)
+- Lead with the value proposition
+- Feature list in bullet points
+- No keyword stuffing (read naturally)
 
-### Verdict
-One paragraph with a blunt recommendation:
-- `PASS`
-- `PASS WITH WARNINGS`
-- `FAIL`
+**Android:**
+- First 175 characters visible in search results
+- Primary keyword in first sentence
+- Feature list in bullet points
 
-### Critical issues
-Bullets only. Include only issues that will hurt discoverability or conversion.
+**Check:**
+- [ ] First sentence hooks the user
+- [ ] Primary features listed
+- [ ] No spelling/grammar errors
+- [ ] Updated recently (not stale)
 
-### Warnings
-Bullets only. Important but non-blocking.
+---
 
-### Platform-specific notes
-Split into:
-- `iOS`
-- `Android`
-Only include sections that apply.
+## Step 4: Screenshots audit
 
-### Recommended keywords
-Give a sample keyword set for iOS or improved short description for Android.
+```bash
+echo "Screenshot review checklist:"
+echo "- First 2 screenshots visible without scrolling"
+echo "- Different value prop on each screenshot"
+echo "- Text overlay explains the feature"
+echo "- Works at thumbnail size"
+echo "- Localized for key markets (if applicable)"
+```
 
-### Build checklist
-Provide a short, execution-ready checklist.
+**iOS requirements:**
+- 6-10 screenshots (iPhone), 6-10 (iPad separate)
+- Different orientations
+- No device frames
 
-## Style
+**Android requirements:**
+- 2-8 screenshots
+- Feature graphic (1024x500)
+- TV banner (for TV Leanback)
 
-- Be direct and specific.
-- Focus on high-impact changes first (name, first screenshot, keywords).
-- Don't suggest 100 changes — prioritize the top 5.
-- Consider the user's search intent.
-- Don't over-engineer for a new app — build ratings first.
+---
 
-## Mobile-specific checks
+## Step 5: Ratings and reviews
 
-- Name searchable without exact match.
-- Screenshots work on all supported device sizes.
-- Description reads well on mobile (short paragraphs).
-- Privacy disclosures don't contradict ASO messaging.
+- Current rating: {_}
+- Review count: {_}
+- Recent rating trend: improving / stable / declining
+- Any 1-star reviews needing response?
 
-## Examples
+**Response strategy:**
+- Respond to negative reviews within 24 hours
+- Be professional, not defensive
+- Offer to help (take off-platform)
 
-Good prompts:
-- `/aso optimize this Flutter app's App Store listing for launch`
-- `/aso review keywords for an iOS productivity app`
-- `/aso audit the Play Store listing for visibility issues`
+---
 
-Bad prompts:
-- `/aso improve downloads`
-- `/aso optimize the app`
+## Step 6: Category and competition
+
+```bash
+echo "Category analysis:"
+echo "- Primary category: "
+echo "- Secondary categories (if any): "
+echo "- Competitor apps: "
+```
+
+**Check:**
+- Category choice maximizes discoverability
+- Competitors identified for keyword research
+- Differentiation clear in listing
+
+---
+
+## Step 7: Output format
+
+ASO AUDIT
+═══════════════════════════════════════════════════════════
+App: {name}
+Platform: iOS / Android / Both
+
+NAME
+- Name: {current}
+- Issues: NONE / {list}
+- Recommendation: {keep / change}
+
+KEYWORDS (iOS)
+- Current: {keyword string}
+- Used: {N}/100 chars
+- Issues: NONE / {list}
+
+DESCRIPTION
+- Hook quality: GOOD / NEEDS WORK
+- Issues: NONE / {list}
+
+SCREENSHOTS
+- Count: {N}
+- First 2 showing value: YES / NO
+- Issues: NONE / {list}
+
+RATING
+- Current: {_} stars
+- Review count: {N}
+
+VERDICT: READY / NEEDS WORK / NOT STARTED
+═══════════════════════════════════════════════════════════
+
+If VERDICT is NEEDS WORK, prioritize top 5 changes to make before launch.
+
+---
+
+## Step 8: Completion
+
+```bash
+_TEL_END=$(date +%s)
+_TEL_DUR=$(( _TEL_END - _TEL_START ))
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"aso","event":"completed","branch":"'"$(git branch --show-current 2>/dev/null || echo unknown)"'","outcome":"OUTCOME","duration_s":"'"$_TEL_DUR"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null || true
+```
