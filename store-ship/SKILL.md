@@ -40,195 +40,215 @@ Ships the mobile build. Does not ship until all gate checks pass.
 
 ```bash
 # 1a. Version bump check
-# Flutter
 _CURRENT_VERSION=$(grep "^version:" pubspec.yaml 2>/dev/null | awk '{print $2}')
 echo "CURRENT_VERSION: $_CURRENT_VERSION"
-# iOS
-_IOS_BUILD=$(grep "CURRENT_PROJECT_VERSION" ios/Runner.xcodeproj/project.pbxproj 2>/dev/null | head -1 | awk -F'= ' '{print $2}' | tr -d ';')
-echo "IOS_BUILD_NUMBER: $_IOS_BUILD"
-# Android
-_ANDROID_BUILD=$(grep "versionCode" android/app/build.gradle 2>/dev/null | head -1 | awk '{print $NF}')
-echo "ANDROID_VERSION_CODE: $_ANDROID_BUILD"
+
+_IS_IOS=0
+_IS_ANDROID=0
+[ -d "ios" ] && [ -f "ios/Runner.xcodeproj/project.pbxproj" ] && _IS_IOS=1
+[ -d "android" ] && [ -f "android/app/build.gradle" ] && _IS_ANDROID=1
+
+if [ "$_IS_IOS" = "1" ]; then
+  _IOS_BUILD=$(grep "CURRENT_PROJECT_VERSION" ios/Runner.xcodeproj/project.pbxproj 2>/dev/null | head -1 | awk -F'= ' '{print $2}' | tr -d ';')
+  echo "IOS_BUILD_NUMBER: $_IOS_BUILD"
+fi
+
+if [ "$_IS_ANDROID" = "1" ]; then
+  _ANDROID_BUILD=$(grep "versionCode" android/app/build.gradle 2>/dev/null | head -1 | awk '{print $NF}')
+  echo "ANDROID_VERSION_CODE: $_ANDROID_BUILD"
+fi
 
 # 1b. Check analytics-audit was run on this branch
 _AUDIT_LOG="$HOME/.gstack/analytics/skill-usage.jsonl"
-grep "analytics-audit" "$_AUDIT_LOG" 2>/dev/null | grep "$_BRANCH" | tail -1 || echo "WARN: analytics-audit not run on this branch"
+_ANALYTICS_RUN=$(grep "analytics-audit" "$_AUDIT_LOG" 2>/dev/null | grep "$_BRANCH" | tail -1)
+if [ -z "$_ANALYTICS_RUN" ]; then
+  echo "WARN: analytics-audit not run on this branch"
+fi
 
 # 1c. Check mobile-qa was run
-grep "mobile-qa" "$_AUDIT_LOG" 2>/dev/null | grep "$_BRANCH" | tail -1 || echo "WARN: mobile-qa not run on this branch"
+_MOBILEQA_RUN=$(grep "mobile-qa" "$_AUDIT_LOG" 2>/dev/null | grep "$_BRANCH" | tail -1)
+if [ -z "$_MOBILEQA_RUN" ]; then
+  echo "WARN: mobile-qa not run on this branch"
+fi
 
 # 1d. iOS Privacy manifest check (iOS 17+ requirement)
-find . -name "PrivacyInfo.xcprivacy" 2>/dev/null | head -5
-[ -z "$(find . -name "PrivacyInfo.xcprivacy" 2>/dev/null)" ] && echo "WARN: No PrivacyInfo.xcprivacy found — required for iOS 17+"
+if [ "$_IS_IOS" = "1" ]; then
+  _PRIVACY_MANIFEST=$(find . -name "PrivacyInfo.xcprivacy" 2>/dev/null | head -1)
+  [ -z "$_PRIVACY_MANIFEST" ] && echo "WARN: No PrivacyInfo.xcprivacy found — required for iOS 17+"
+fi
 
 # 1e. No NSAllowsArbitraryLoads in production
-grep -r "NSAllowsArbitraryLoads" ios/ --include="*.plist" 2>/dev/null | grep -v "false" | head -5
+if [ "$_IS_IOS" = "1" ]; then
+  _ARBITRARY_LOADS=$(grep -r "NSAllowsArbitraryLoads" ios/ --include="*.plist" 2>/dev/null | grep -v "false" | head -5)
+  [ -n "$_ARBITRARY_LOADS" ] && echo "WARN: NSAllowsArbitraryLoads found — may cause App Review rejection"
+fi
 
 # 1f. Android: check for minifyEnabled in release
-grep -r "minifyEnabled.*true" android/app/build.gradle 2>/dev/null | head -3 || echo "WARN: minifyEnabled not found in release build"
+if [ "$_IS_ANDROID" = "1" ]; then
+  grep -r "minifyEnabled.*true" android/app/build.gradle 2>/dev/null | head -3 || echo "WARN: minifyEnabled not found in release build"
+fi
 ```
 
 If version has not been bumped since last ship, AskUserQuestion:
 - A) Bump version now (show current → suggest next)
 - B) Cancel ship
 
-If `analytics-audit` or `mobile-qa` not run: warn but do not block (these may have been run on a different branch).
+If the user picks A, STOP and let them run it. Do not proceed.
+
+If `analytics-audit` or `mobile-qa` not run, AskUserQuestion:
+- "You're about to ship to the store without running {skill-name} on this branch. Recommended before distributing to users."
+- A) Run {skill-name} first (recommended)
+- B) Ship anyway
+
+If the user picks A, STOP and let them run it. Do not proceed.
 
 ---
 
-## Step 2: Determine ship target
+## Step 2: Platform-specific build
 
 ```bash
 _PLATFORM=$(~/.claude/skills/gstack/bin/gstack-config get mobile_platform 2>/dev/null || echo "unknown")
-echo "Shipping to: $_PLATFORM"
-
-# Determine if iOS, Android, or both
-_IS_IOS=0
-_IS_ANDROID=0
-[ -d "ios" ] && [ -f "ios/Runner.xcodeproj/project.pbxproj" ] && _IS_IOS=1
-[ -d "android" ] && [ -f "android/app/build.gradle" ] && _IS_ANDROID=1
-echo "iOS: $_IS_IOS, Android: $_IS_ANDROID"
+echo "PLATFORM: $_PLATFORM"
+source ~/.gstack/mobile.env 2>/dev/null || echo "WARN: credentials not loaded"
 ```
 
----
-
-## Step 3: iOS ship (if applicable)
-
-**3a. Build iOS for App Store / TestFlight**
+### Flutter (iOS)
 
 ```bash
-# Verify certificates
-security find-identity -v -p codesigning ios/ 2>/dev/null | head -5
+# Clean build
+flutter clean && flutter pub get
 
-# Build for App Store (or TestFlight if not ready for full submission)
-cd ios
-# For TestFlight: use --simulator=NO and proper provisioning
-xcodebuild -workspace Runner.xcworkspace -scheme Runner \
+# Build IPA (release)
+flutter build ipa --release --obfuscate --split-debug-info=./debug-info/
+
+# Check build output
+ls -lh build/ios/ipa/*.ipa 2>/dev/null || echo "IPA not found — check build output above"
+```
+
+### Flutter (Android)
+
+```bash
+# Build AAB (preferred over APK for Play Console)
+flutter build appbundle --release --obfuscate --split-debug-info=./debug-info/
+ls -lh build/app/outputs/bundle/release/*.aab 2>/dev/null || echo "AAB not found"
+```
+
+### Expo
+
+```bash
+# iOS
+eas build --platform ios --profile production 2>/dev/null
+# Android
+eas build --platform android --profile production 2>/dev/null
+```
+
+### Swift (iOS only)
+
+```bash
+xcodebuild -scheme "$_APP_SCHEME" \
   -configuration Release \
-  -sdk iphoneos \
-  -archivePath ~/Desktop/build.xcarchive \
-  archive 2>&1 | tail -30
-
-# Export for upload
+  -archivePath build/Release.xcarchive \
+  archive | tail -20
 xcodebuild -exportArchive \
-  -archivePath ~/Desktop/build.xcarchive \
-  -exportOptionsPlist ExportOptions.plist \
-  -exportPath ~/Desktop/build-output \
-  2>&1 | tail -20
+  -archivePath build/Release.xcarchive \
+  -exportPath build/Release \
+  -exportOptionsPlist ios/ExportOptions.plist 2>/dev/null | tail -10
 ```
 
-**3b. Upload to App Store Connect**
+### Kotlin (Android only)
 
 ```bash
-# Option 1: Transporter (manual, reliable)
-# open ~/Desktop/build-output/Runner.ipa (will open Transporter)
-
-# Option 2: Fastlane (if configured)
-# fastlane deliver --ipa_path ~/Desktop/build-output/Runner.ipa
-
-# Option 3: ASC CLI (if configured)
-# xcrun altool --upload-app -f ~/Desktop/build-output/Runner.ipa -t ios -u "$ASC_KEY_ID" -k "$ASC_PRIVATE_KEY_PATH"
+./gradlew bundleRelease | tail -20
+ls -lh app/build/outputs/bundle/release/*.aab 2>/dev/null
 ```
 
-**3c. Create TestFlight build record**
-
-After upload, the build appears in App Store Connect. Note the build number and
-submit for TestFlight review if required.
+If build fails: STOP. Show the last 30 lines of build output. Do not proceed to upload.
 
 ---
 
-## Step 4: Android ship (if applicable)
+## Step 3: Upload
 
-**4a. Build Android release**
+### iOS → TestFlight
 
 ```bash
-# Flutter: build app bundle (preferred for Play)
-flutter build appbundle --release 2>&1 | tail -20
+# Upload IPA to App Store Connect via xcrun altool or notarytool
+xcrun altool --upload-app \
+  -t ios \
+  -f build/ios/ipa/*.ipa \
+  --apiKey "$ASC_KEY_ID" \
+  --apiIssuer "$ASC_ISSUER_ID" \
+  --private-key "$ASC_PRIVATE_KEY_PATH" 2>&1 | tail -20
 
-# Or APK if needed
-# flutter build apk --release
-
-# Check output
-ls -la build/app/outputs/flutter-apk/ 2>/dev/null || ls -la build/app/outputs/bundle/release/ 2>/dev/null
+# Or use Transporter (GUI) if altool is unavailable:
+echo "If altool fails: open Transporter.app and drag the IPA."
 ```
 
-**4b. Upload to Play Console**
+### Android → Play Console Internal Track
 
 ```bash
-# Option 1: Play Console UI (manual)
+# Upload AAB via bundletool or Gradle Play Publisher plugin
+# Check for Gradle Play Publisher
+grep -r "play-publisher\|com.github.triplet.play" android/app/build.gradle android/build.gradle 2>/dev/null | head -5
 
-# Option 2: Fastlane (if configured)
-# fastlane supply --apk build/app/outputs/flutter-apk/app-release.apk
+# If plugin found:
+./gradlew publishReleaseBundle 2>&1 | tail -20
 
-# Option 3: Play Developer API (if credentials configured)
-# Upload using https://github.com/codepath/android-upload-plugin or similar
+# If not, print the manual path:
+echo "Play Console: https://play.google.com/console"
+echo "Internal testing → Create new release → Upload the AAB from:"
+ls -lh app/build/outputs/bundle/release/*.aab 2>/dev/null
 ```
 
-**4c. Configure release track**
-
-In Play Console:
-- Internal testing: fast feedback, all testers get access
-- Closed beta: specific tester groups
-- Production: phased rollout or full release
-
----
-
-## Step 5: Notify (post-ship)
+### Expo (EAS Submit)
 
 ```bash
-# Determine what to post
-_BUILD_URL=""
-_BUILD_NOTES=""
-
-# iOS: App Store Connect build URL (if available)
-# Android: Play Console internal track link
-
-echo "Ship complete!"
-echo "iOS: $_IS_IOS"
-echo "Android: $_IS_ANDROID"
-echo "Branch: $_BRANCH"
-echo "Build: $_CURRENT_VERSION / $_IOS_BUILD / $_ANDROID_BUILD"
-echo ""
-echo "Next: /canary to monitor for crashes"
+eas submit --platform ios --latest 2>/dev/null
+eas submit --platform android --latest 2>/dev/null
 ```
 
 ---
 
-## Step 6: Output
+## Step 4: Post-ship
 
-STORE-SHIP RESULTS
+```bash
+# Tag the release commit
+_VERSION=$(grep "^version:" pubspec.yaml 2>/dev/null | awk '{print $2}' || cat VERSION 2>/dev/null || echo "unknown")
+git tag -a "v$_VERSION" -m "store-ship v$_VERSION" 2>/dev/null || echo "Tag already exists or version unknown"
+git push origin "v$_VERSION" 2>/dev/null || true
+```
+
+Output a post-ship summary:
+
+STORE SHIP
 ═══════════════════════════════════════════════════════════
-Platform: {flutter|expo|swift|kotlin}
-Ship target: {TestFlight|Play Internal|Production}
-iOS Build: {build number}
-Android Build: {version code}
-Status: SHIPPED / BLOCKED
+Version: {version}
+Build: {build number}
+Platform: {iOS / Android / Both}
+Target: {TestFlight / Play Internal / EAS}
 
-Gates passed:
-- Version bump: YES/NO
-- analytics-audit: RUN/NOT RUN
-- mobile-qa: RUN/NOT RUN
-- Privacy manifest: YES/NO/MISSING (iOS 17+)
-- ATS disabled: YES/NO
+iOS IPA: {size}
+Android AAB: {size}
 
-Ship location: {URL or console path}
+Upload: SUCCESS / FAILED
+Tag: v{version} pushed
 
 Next steps:
-1. /canary --platform mobile (monitor for crashes)
-2. Wait for review (iOS: hours to days, Android: typically faster)
-3. Monitor store listing after approval
+iOS: Check App Store Connect → TestFlight → wait for processing (~5-15 min)
+Android: Check Play Console → Internal testing → review and promote
+Both: Run /analytics-audit to verify events fire on the new build
+After soak period: Promote to external TestFlight / open testing
 ═══════════════════════════════════════════════════════════
 
 ---
 
-## Step 7: Completion
+## Step 5: Completion
 
 ```bash
 _TEL_END=$(date +%s)
 _TEL_DUR=$(( _TEL_END - _TEL_START ))
 ~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"store-ship","event":"completed","branch":"'"$(git branch --show-current 2>/dev/null || echo unknown)"'","outcome":"OUTCOME","duration_s":"'"$_TEL_DUR"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null || true
 if [ "$_TEL" != "off" ]; then
-echo '{"skill":"store-ship","duration_s":"'"$_TEL_DUR"'","outcome":"OUTCOME","session":"'"$_SESSION_ID"'","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
+echo '{"skill":"store-ship","duration_s":"'"$_TEL_DUR"'","outcome":"OUTCOME","version":"'"$_VERSION"'","session":"'"$_SESSION_ID"'","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
 fi
 ```
 

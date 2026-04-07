@@ -829,7 +829,7 @@ Verify the store listing matches expectations:
 
 ### Phase M3: Crash and Stability Monitoring
 
-For 48 hours post-release, check daily:
+For 96 hours post-release, check daily:
 
 ```bash
 # iOS - check Firebase Crashlytics or Sentry

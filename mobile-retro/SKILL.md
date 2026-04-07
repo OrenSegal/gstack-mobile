@@ -3,16 +3,16 @@ name: mobile-retro
 preamble-tier: 4
 version: 1.0.0
 description: |
-  Mobile release retrospective. Analyzes crash rates, ANR rates, store reviews, user feedback,
-  and velocity to improve the mobile development process. Run weekly or after each major
-  mobile release stabilizes (1-2 weeks post-ship). (gstack-mobile)
+  Weekly mobile retro scoped to AARRR metrics, crash rates, ANR/jank trends, store
+  review velocity, and activation funnel performance. Reads from crash reporting dashboards,
+  analytics, and App Store Connect / Play Console data. Produces a focused retrospective
+  with ranked action items for the next week. (gstack-mobile)
 allowed-tools:
   - Bash
   - Read
   - Write
-  - Grep
-  - AskUserQuestion
   - WebSearch
+  - AskUserQuestion
 ---
 <!-- gstack-mobile: mobile-retro/SKILL.md -->
 
@@ -26,170 +26,196 @@ _SESSION_ID="$$-$(date +%s)"
 echo "BRANCH: $_BRANCH"
 echo "MOBILE_PLATFORM: $_MOBILE_PLATFORM"
 ~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"mobile-retro","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
+# Read previous retro if it exists
+eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" 2>/dev/null || true
+_RETRO_DIR="${GSTACK_HOME:-$HOME/.gstack}/projects/${SLUG:-unknown}/retros"
+mkdir -p "$_RETRO_DIR"
+_LAST_RETRO=$(ls -t "$_RETRO_DIR"/mobile-retro-*.md 2>/dev/null | head -1)
+[ -n "$_LAST_RETRO" ] && echo "LAST_RETRO: $_LAST_RETRO" || echo "LAST_RETRO: none"
 ```
+
+If `LAST_RETRO` is not `none`, read it before starting — compare this week against last week.
 
 ---
 
 # /mobile-retro
 
-Mobile releases are higher stakes than web. A bad release can't be hotfixed in 5 minutes
-— it takes hours to get through App Review, and Play Console updates in 10-30 minutes but
-users don't auto-update. This retro learns from each release to improve the next.
+One hour, once a week. What worked, what broke, what to fix next. This retro focuses on
+the metrics that predict long-term retention — not vanity numbers.
 
 ---
 
-## Step 0: Gather data
+## Step 0: Collect data
 
-Before the session, collect:
+Ask the user for or look up from dashboards:
 
-**Crash data:**
+**Required:**
+- D1 retention rate (last week vs. week before)
+- D7 retention rate
+- Crash-free sessions rate (Sentry / Crashlytics / Firebase)
+- App Store rating (current + trend)
+- New reviews this week (positive / negative ratio)
+
+**If available:**
+- Activation rate (installs → first core action)
+- Push notification open rate
+- Session length trend
+- Revenue / IAP conversion rate (if applicable)
+- App Store impressions and conversion rate (App Store Connect data)
+
+If the user cannot provide these, ask which dashboard they use and guide them to the
+specific numbers. Don't proceed with a retro without at least D1 retention and crash rate.
+
+---
+
+## Step 1: Crash analysis
+
 ```bash
-# iOS: check Firebase Crashlytics or Sentry
-# Android: check Play Console -> Crashes & ANRs
-echo "Pull crash reports for the past 2 weeks"
+# Check for recent crash/error logs in the repo
+find . -name "*.crash" -o -name "crash_log*" 2>/dev/null | head -5
+# Check Sentry or Crashlytics integration
+grep -r "Sentry\|Crashlytics\|firebase_crashlytics" pubspec.yaml lib/ 2>/dev/null | head -5
 ```
 
-**Store data:**
+For each crash that affected > 0.1% of sessions this week:
+- Read the stack trace (ask the user to paste if not in the repo)
+- Identify the root cause
+- Classify: regression (new this week) or pre-existing
+- Estimate fix time (human vs. cc+gstack)
+- Recommend priority: P0 (fix now), P1 (fix this week), P2 (fix next sprint)
+
+Target: crash-free sessions > 99.5%. Flag anything below 99%.
+Below 99%: CRITICAL — blocks next ship.
+Below 99.5%: WARN — fix this sprint.
+
+---
+
+## Step 2: Retention analysis
+
+Retention benchmarks by app type:
+
+| App type | D1 | D7 | D30 |
+|---|---|---|---|
+| Games | 35-40% | 15-20% | 5-8% |
+| Social | 40-50% | 25-35% | 15-25% |
+| Utility / productivity | 25-35% | 10-20% | 5-15% |
+| E-commerce | 35-45% | 15-25% | 8-15% |
+| Health / fitness | 30-40% | 15-25% | 8-18% |
+
+Compare the user's numbers against benchmarks. For each metric below benchmark:
+- Is the drop gradual (feature quality issue) or sudden (regression from a recent ship)?
+- Which cohort is affected (new users, returning users, specific device)?
+- What is the most likely cause?
+
+---
+
+## Step 3: Week's ships review
+
 ```bash
-# iOS: App Store Connect -> Ratings and Reviews
-# Android: Play Console -> Statistics -> Ratings
-echo "Pull rating trends and recent reviews"
+# Review what shipped this week
+git log --since="7 days ago" --oneline --decorate 2>/dev/null | head -15
 ```
 
-**Release info:**
-- What version shipped? When?
-- What was the main change (feature, fix, update)?
-- How long from code complete to store approval?
+For each ship this week:
+- Did it include a crash regression? (flag if so)
+- Did it include a feature that likely impacts retention (positive or negative)?
+- Are there store reviews mentioning the new version?
 
 ---
 
-## Step 1: Stability metrics
+## Step 4: Store review velocity
 
-For the retro period (typically 2 weeks):
+```bash
+# Check recent reviews (manual or via API if available)
+echo "Check App Store Connect and Play Console for this week's reviews"
+```
 
-**Crash metrics:**
-- Crash-free sessions: target >99% (iOS), >99.5% (Android)
-- Crash count: new crash signatures vs recurring
-- ANR rate (Android): target <0.1%
-
-**Review the data:**
-- Did any new crash signatures appear post-release?
-- Any crash clusters (same crash happening 100+ times)?
-- Any device-specific issues?
-
----
-
-## Step 2: Store reviews
-
-**iOS:**
-- Rating change (up/down/flat)
-- Count of 1-2 star reviews post-release
-- Key themes in negative reviews
-
-**Android:**
-- Rating change
-- Reviews mentioning crashes, bugs, or issues
-- Any policy warnings from Play
+Track:
+- Number of new reviews this week
+- Rating trend (improving, stable, declining)
+- Top recurring complaint
+- Top recurring praise
 
 ---
 
-## Step 3: User feedback
+## Step 5: Action items
 
-- Support ticket volume change (up/down/flat)
-- Common issues in tickets
-- Any feature requests that came up repeatedly
+Rank action items by impact:
 
----
-
-## Step 4: Release process
-
-- Time from code complete to TestFlight/Play internal: {_} hours/days
-- Time from upload to App Store/Play approval: {_} hours/days
-- Any submission issues or rejections?
-- Rollout strategy: immediate / phased / manual
-
----
-
-## Step 5: What went well
-
-- Celebrate wins: stable launch, fast approval, positive reviews
-- What practices should we repeat?
-
-List specific things that worked:
-1.
-2.
-3.
-
----
-
-## Step 6: What to improve
-
-- What went wrong or could be better?
-- Process gaps (testing, review, monitoring)
-- Communication gaps
-- Planning gaps
-
-List specific improvements:
-1.
-2.
-3.
-
----
-
-## Step 7: Action items
-
-For each improvement above, create an action:
-
-| Action | Owner | Due |
-|--------|-------|-----|
-| | | |
-| | | |
-
----
-
-## Step 8: Output format
-
-MOBILE RETRO
+PRIORITY TEMPLATE
 ═══════════════════════════════════════════════════════════
-Period: {date range}
-Version: {version}
 
-STABILITY
-- Crash-free sessions: {_}%
-- New crash signatures: {N}
-- ANR rate (Android): {_}%
+P0 (block next ship):
+- [ ] {critical crash fix}
+- [ ] {critical regression}
+
+P1 (this week):
+- [ ] {metric improvement}
+- [ ] {store review response}
+
+P2 (next sprint):
+- [ ] {nice-to-have improvement}
+- [ ] {technical debt}
+
+P3 (backlog):
+- [ ] {investigation needed}
+═══════════════════════════════════════════════════════════
+
+---
+
+## Step 6: Output
+
+MOBILE RETRO — Week of {date}
+═══════════════════════════════════════════════════════════
+
+RETENTION
+- D1: {N}% (vs last week: {+N% / -N%})
+- D7: {N}% (vs last week: {+N% / -N%})
+- Verdict: {on track / below benchmark / critical}
+
+CRASH RATE
+- Crash-free sessions: {N}%
+- New crashes this week: {N}
+- Verdict: {on track / needs work / critical}
 
 STORE
-- iOS rating: {_} (was {_})
-- Android rating: {_} (was {_})
-- 1-2 star reviews: {N}
+- Rating: {N} stars (trend: ↑/↓/→)
+- Reviews this week: {N} ({P} positive, {N} negative)
+- Top complaint: {theme}
+- Top praise: {theme}
 
-RELEASE
-- Code to TestFlight: {_} hours
-- Upload to approval: {_} hours
+SHIPS THIS WEEK
+- {commit message}
+- {commit message}
 
-WHAT WENT WELL
-- {item 1}
-- {item 2}
+PRIORITY ACTIONS
 
-WHAT TO IMPROVE
-- {item 1}
-- {item 2}
+P0 (blocks ship):
+1. {action}
 
-ACTION ITEMS
-- {action} ({owner}, {due})
+P1 (this week):
+1. {action}
+2. {action}
 
-VERDICT: SUCCESS / WARNING / NEEDS ATTENTION
-═══════════════════════════════════════════════════
+P2 (next sprint):
+1. {action}
 
-Save to `~/.gstack/projects/<slug>/mobile-retro-{date}.md` for history.
+NEXT RETRO: {date + 7 days}
+═══════════════════════════════════════════════════════════
+
+Save to: `~/.gstack/projects/{project}/retros/mobile-retro-{date}.md`
 
 ---
 
-## Step 9: Completion
+## Step 7: Completion
 
 ```bash
 _TEL_END=$(date +%s)
 _TEL_DUR=$(( _TEL_END - _TEL_START ))
 ~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"mobile-retro","event":"completed","branch":"'"$(git branch --show-current 2>/dev/null || echo unknown)"'","outcome":"OUTCOME","duration_s":"'"$_TEL_DUR"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null || true
+if [ "$_TEL" != "off" ]; then
+echo '{"skill":"mobile-retro","duration_s":"'"$_TEL_DUR"'","outcome":"OUTCOME","session":"'"$_SESSION_ID"'","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
+fi
 ```
+
+Replace `OUTCOME` with `success`, `fail`, or `abort`.
