@@ -437,3 +437,27 @@ The active skill lives at `~/.claude/skills/gstack/`. After making changes:
 Or copy the binaries directly:
 - `cp browse/dist/browse ~/.claude/skills/gstack/browse/dist/browse`
 - `cp design/dist/design ~/.claude/skills/gstack/design/dist/design`
+
+## Mobile routing rules
+
+When working on mobile projects (Flutter/Expo/Swift/Kotlin), use these skills:
+
+| Symptom | Invoke |
+|---------|--------|
+| Frame drops, janky scroll, slow animations | `/jank-removal` |
+| App Store/Play Store rejection risk, compliance check | `/store-compliance` |
+| Push notifications not delivering or asking too early | `/push-audit` |
+| Analytics missing, can't see funnel | `/analytics-audit` |
+| Onboarding drop-off, activation problem | `/onboarding-audit` |
+| UI doesn't follow iOS HIG or Material Design | `/hig-review` |
+| App crashing, ANR, hang | `/investigate` |
+| Build, archive, submit to TestFlight or Play | `/store-ship` |
+| App feels slow, cold start too long | `/perf-audit` |
+| Security review, credentials in code | `/mobile-security` |
+| Technical debt, deprecated APIs, dead code | `/tech-debt` |
+| Weekly retro with crash rate, store reviews | `/mobile-retro` |
+| Post-deploy mobile monitoring | `/canary` |
+| App Store Optimization audit | `/aso` |
+
+**Note:** The `/qa` skill relies on headless browser which doesn't apply to mobile.
+Use device testing or Maestro/Appium for mobile QA instead.
