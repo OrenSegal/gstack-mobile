@@ -1,135 +1,246 @@
 ---
 name: analytics-audit
-description: Analytics implementation review for mobile apps — event schemas, tracking completeness, platform SDK integration, privacy compliance, and data quality.
+preamble-tier: 4
+version: 1.0.0
+description: |
+  Verifies analytics events fire correctly before shipping. Checks AARRR event coverage,
+  user identity handoff, no PII in event properties, no duplicate events, and push
+  notification open tracking. Run after /mobile-qa and before /store-ship on any branch
+  touching user flows, onboarding, payments, or notifications. (gstack-mobile)
+allowed-tools:
+  - Bash
+  - Read
+  - Grep
+  - Glob
+  - Write
+  - AskUserQuestion
+---
+<!-- gstack-mobile: analytics-audit/SKILL.md -->
+
+## Preamble (run first)
+
+```bash
+_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+_MOBILE_PLATFORM=$(~/.claude/skills/gstack/bin/gstack-config get mobile_platform 2>/dev/null || echo "unknown")
+_TEL_START=$(date +%s)
+_SESSION_ID="$$-$(date +%s)"
+echo "BRANCH: $_BRANCH"
+echo "MOBILE_PLATFORM: $_MOBILE_PLATFORM"
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"analytics-audit","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
+```
+
 ---
 
 # /analytics-audit
 
-Run this after `/mobile-qa` and before `/onboarding-audit`. This skill reviews analytics implementation to ensure events are well-structured, complete, privacy-compliant, and actionable for product decisions.
+The most common analytics failure: you ship, the feature runs for a week, then you look at
+the funnel and see a flat line. Either the event never fired, fired twice, or fired with
+`user_id: null`. This audit catches that before ship.
 
-## Use when
+---
 
-- Adding new feature tracking.
-- Implementing a new analytics SDK (Firebase, Amplitude, Mixpanel, etc.).
-- Reviewing a PR for tracking gaps or quality issues.
-- Preparing for a data audit or GDPR/CCPA compliance review.
-- Setting up user identity and attribution.
-- Debugging missing or duplicate events in production.
+## Step 0: Identify analytics provider
 
-## Inputs
+```bash
+# Flutter
+grep -E "amplitude|mixpanel|segment|posthog|firebase_analytics|rudderstack" pubspec.yaml 2>/dev/null
+# Expo / React Native
+cat package.json 2>/dev/null | grep -E "amplitude|mixpanel|segment|posthog|analytics" | head -10
+# Swift
+find . -name "Podfile" -o -name "Package.swift" 2>/dev/null | xargs grep -iE "amplitude|mixpanel|segment|posthog" 2>/dev/null | head -10
+# Kotlin
+find . -name "*.gradle" -o -name "*.gradle.kts" 2>/dev/null | xargs grep -iE "amplitude|mixpanel|segment|posthog|firebase" 2>/dev/null | head -10
+```
 
-Collect or infer:
+Note the provider. This skill works the same regardless of provider — the patterns
+(event fire, user identity, PII) are universal.
 
-- Platform: `flutter`, `swift`, `kotlin`, or `expo`.
-- Target OS: iOS, Android, or both.
-- What changed: diff, PR, or feature description.
-- Analytics SDKs: which tools are used (Firebase, Amplitude, Mixpanel, custom, etc.).
-- User identity: how users are identified (anonymous ID, logged-in user ID, both).
-- Event volume expectations: daily active users, events per session.
-- Privacy regime: GDPR, CCPA, or no specific regulation.
+---
 
-If platform is missing:
-- Read `~/.gstack/config` or project docs.
-- If still unclear, ask one concise question before proceeding.
+## Step 1: AARRR event coverage
 
-## Review standard
+Check that every funnel stage has a corresponding event. For each stage, grep for the
+event call and verify it exists:
 
-### 1. Event schema quality
-- Event names are consistent, descriptive, and use snake_case or camelCase consistently.
-- Properties are typed (string, number, boolean) and don't change type over time.
-- No PII in event names or properties (email, name, phone in plain text).
-- Required properties present (timestamp, session ID, platform, version).
-- Property values are not null or "undefined" for important fields.
+**Acquisition:**
+```bash
+grep -r "app_open\|AppOpen\|logEvent.*app_open\|track.*app_open\|logEvent.*open" \
+  lib/ src/ --include="*.dart" --include="*.ts" --include="*.tsx" --include="*.swift" --include="*.kt" \
+  -r . 2>/dev/null | head -10
+grep -r "attribution\|UTM\|referrer\|campaign\|install_referrer" \
+  lib/ src/ -r . 2>/dev/null | head -10
+```
 
-### 2. Tracking completeness
-- Key user actions tracked (screen views, button taps, form submissions, errors).
-- No redundant events (same action fired multiple times).
-- Revenue events include currency and value in correct units.
-- User identity set at the right time (after auth, not before).
-- Out-of-band events (push opens, deep links) tracked.
+Required events:
+- `app_open` with `source`, `campaign`, `referral_code` properties (if attribution used)
+- `install` (first launch only — not on every open)
 
-### 3. Platform SDK integration
-- Firebase: correct usage of logEvent, setUserId, setUserProperties.
-- Amplitude: correct identification, group identification if applicable.
-- Mixpanel: proper people and track calls, distinct ID management.
-- No blocking on analytics calls (async, non-blocking).
-- Offline events queued and sent when connectivity returns.
+**Activation:**
+```bash
+grep -r "onboarding\|first_open\|signup_complete\|account_created\|first_action\|aha_moment" \
+  lib/ src/ -r . 2>/dev/null | head -20
+```
 
-### 4. Privacy and compliance
-- Consent collected before tracking (for GDPR/CCPA regimes).
-- PII hashed or removed from events (email hashed, names not sent).
-- User ID stable across sessions but regenerated on consent withdrawal.
-- Privacy manifest declares data collection (iOS).
-- Data retention policy documented and enforced.
-- No sensitive categories in events (health, finance, kids) without explicit justification.
+Required events:
+- `onboarding_step_{N}_completed` for each onboarding step
+- `signup_completed` with `method` (email, google, apple, etc.)
+- `first_core_action` (the thing that proves value — app-specific, must be defined)
 
-### 5. Attribution and identity
-- Anonymous ID persists across sessions until login.
-- User ID set consistently after authentication.
-- Campaign attribution parameters captured (utm_source, utm_medium, etc.).
-- Deep link tracking handled for both iOS and Android.
-- No double-counting from both SDK and manual tracking.
+**Retention:**
+```bash
+grep -r "session_start\|session_end\|screen_view\|page_view" lib/ src/ -r . 2>/dev/null | head -10
+```
 
-### 6. Data quality
-- No test events in production (verify event names don't include "test", "debug").
-- No events fired in loops or on every render.
-- Event volume is reasonable (not 1000+ events per session).
-- Debug/verbose logging disabled in release builds.
+Required:
+- `session_start` (automatic in most SDKs, but verify it fires)
+- Feature-level events for the primary retention loops
 
-## Output format
+**Revenue:**
+```bash
+grep -r "purchase\|subscription\|payment\|checkout\|iap\|in_app_purchase\|revenue" \
+  lib/ src/ -r . --include="*.dart" --include="*.ts" --include="*.swift" --include="*.kt" 2>/dev/null | head -20
+```
 
-Use this exact structure:
+Required events (all three required — missing any one kills funnel analysis):
+- `purchase_initiated`
+- `purchase_completed` with `product_id`, `price`, `currency`, `revenue`
+- `purchase_failed` with `error_code`
+- `subscription_renewed` (if subscriptions)
 
-### Verdict
-One paragraph with a blunt recommendation:
-- `PASS`
-- `PASS WITH WARNINGS`
-- `FAIL`
+**Referral:**
+```bash
+grep -r "share\|invite\|referral\|refer_a_friend" lib/ src/ -r . 2>/dev/null | head -10
+```
 
-### Critical issues
-Bullets only. Include only issues that should block merge or cause data quality problems.
+Required:
+- `share_triggered` with `surface` (e.g., post-order, profile, share sheet)
+- `invite_sent` with `channel` (SMS, email, social)
+- `invite_accepted` (if trackable)
 
-### Warnings
-Bullets only. Important but non-blocking.
+---
 
-### Platform-specific notes
-Split into:
-- `iOS`
-- `Android`
-- `Flutter / shared`
-Only include sections that apply.
+## Step 2: User identity handoff
 
-### Recommended tracking spec
-Give a concise event schema for the change, if applicable.
+This is the most common analytics implementation bug. Before signup, events fire with
+an anonymous ID. After signup, all subsequent events should fire with a real user ID,
+and the anonymous → identified handoff must be called once.
 
-### Build checklist
-Provide a short, execution-ready checklist.
+```bash
+grep -r "identify\|setUserId\|alias\|userId\|user_id" \
+  lib/ src/ -r . --include="*.dart" --include="*.ts" --include="*.swift" --include="*.kt" 2>/dev/null | head -20
+```
 
-## Style
+Check:
+- `identify(userId)` or equivalent is called exactly once per session, after signup or login
+- It is NOT called before the user is authenticated (avoid `identify(null)`)
+- After calling `identify`, subsequent `track()` calls include the user ID
+- Anonymous events that occurred before signup should be associated (alias call, if SDK supports it)
 
-- Be direct and specific.
-- Focus on actionable issues, not theoretical concerns.
-- Recommend specific property names and types when possible.
-- Flag issues that will cause problems in the analytics dashboard (nulls, type mismatches).
-- Consider the downstream analyst who will use this data.
+Flag if `identify` is called in a loop, called with null/undefined, or not called at all.
 
-## Mobile-specific checks
+---
 
-Always check for:
+## Step 3: PII in event properties
 
-- IDFA/GAID handling and consent.
-- Deep link attribution across iOS Universal Links and Android App Links.
-- Background/Foreground session handling.
-- Push notification tracking.
-- App update vs fresh install distinction.
+This matters for GDPR, CCPA, and App Store Review guideline 5.1.2.
 
-## Examples
+```bash
+grep -r "email\|phone\|name\|address\|dob\|date_of_birth\|ssn\|passport" \
+  lib/ src/ -r . --include="*.dart" --include="*.ts" --include="*.swift" --include="*.kt" 2>/dev/null \
+  | grep -i "track\|log_event\|logEvent\|capture\|record" | head -20
+```
 
-Good prompts:
-- `/analytics-audit review this checkout flow tracking implementation`
-- `/analytics-audit check if this feature has proper event schema`
-- `/analytics-audit audit analytics for GDPR compliance`
+Flag any event that contains:
+- Raw email address as a property value (use a hash if identification is needed)
+- Full name
+- Phone number
+- Physical address
+- Date of birth
+- Any government ID
 
-Bad prompts:
-- `/analytics-audit improve tracking`
-- `/analytics-audit check analytics`
+Safe patterns: user ID (internal UUID, not email), anonymized age bucket, country code.
+
+---
+
+## Step 4: Duplicate event detection
+
+Common cause: events fired in both `initState` and `didChangeDependencies`, or in
+both a widget and its parent, or on route change without a dedup guard.
+
+```bash
+# Find event calls and check for structural duplication
+grep -rn "track\|logEvent\|capture" lib/ src/ -r . \
+  --include="*.dart" --include="*.ts" --include="*.swift" --include="*.kt" 2>/dev/null \
+  | grep -v "//" | sort | uniq -d | head -20
+```
+
+Manual check: navigate to a key screen, go back, navigate again. Verify the
+`screen_view` event fires once per visit, not twice. Check for events inside
+`build()` methods (Flutter) or `render()` (React Native) — these will fire on
+every rebuild, not just once.
+
+---
+
+## Step 5: Push notification open tracking
+
+```bash
+grep -r "notification.*open\|push.*open\|notificationTapped\|onNotificationOpened\|getInitialNotification" \
+  lib/ src/ -r . 2>/dev/null | head -10
+```
+
+Required:
+- `notification_opened` event fires when user taps a push notification
+- Event includes `campaign_id` or `notification_id` for attribution
+- Event fires in both cold-start scenario (app was terminated) and warm-start (app was backgrounded)
+- Deep link routing happens AFTER the event is fired, not before
+
+---
+
+## Step 6: Output
+
+ANALYTICS AUDIT
+═══════════════════════════════════════════════════════════
+
+Provider: {name}
+AARRR Coverage
+Stage	Required event	Status	Notes
+Acquisition	app_open	FOUND/MISSING	
+Activation	onboarding_step_N_completed	FOUND/MISSING	
+Activation	signup_completed	FOUND/MISSING	
+Activation	first_core_action	FOUND/MISSING/UNDEFINED	
+Retention	session_start	FOUND/MISSING	
+Revenue	purchase_initiated	FOUND/MISSING	
+Revenue	purchase_completed	FOUND/MISSING	
+Revenue	purchase_failed	FOUND/MISSING	
+Referral	share_triggered	FOUND/MISSING	
+Identity
+
+User identify call: FOUND/MISSING/INCORRECT
+Issue: {describe problem if any}
+PII
+
+PII in events: NONE/FOUND
+{List each violation if found}
+Duplicate risk
+
+{List any duplicate fire risks found}
+Push
+
+Push open tracking: FOUND/MISSING/PARTIAL
+{Describe gap if any}
+
+VERDICT: PASS / FAIL
+═══════════════════════════════════════════════════════════
+
+If any `MISSING` events exist for Revenue stages, this is CRITICAL — block `/store-ship`
+and require them to be added. Missing Acquisition/Retention events are WARN.
+
+---
+
+## Step 7: Completion telemetry
+
+```bash
+_TEL_END=$(date +%s)
+_TEL_DUR=$(( _TEL_END - _TEL_START ))
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"analytics-audit","event":"completed","branch":"'"$(git branch --show-current 2>/dev/null || echo unknown)"'","outcome":"OUTCOME","duration_s":"'"$_TEL_DUR"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null || true
+```
