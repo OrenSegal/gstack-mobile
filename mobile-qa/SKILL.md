@@ -1,136 +1,255 @@
 ---
 name: mobile-qa
-description: Mobile QA testing — simulator testing, accessibility validation, device coverage strategy, and pre-submission checklist for App Store and Play.
+preamble-tier: 4
+version: 1.0.0
+description: |
+  Mobile QA across a simulator/device matrix. Tests cold start time, keyboard handling,
+  scroll jank, safe area rendering, accessibility traversal, rotation, background/foreground
+  state, offline behavior, and permission dialogs. Run after build, before /store-ship.
+  (gstack-mobile)
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - AskUserQuestion
+---
+<!-- gstack-mobile: mobile-qa/SKILL.md -->
+
+## Preamble (run first)
+
+```bash
+_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+_MOBILE_PLATFORM=$(~/.claude/skills/gstack/bin/gstack-config get mobile_platform 2>/dev/null || echo "unknown")
+_TEL=$(~/.claude/skills/gstack/bin/gstack-config get telemetry 2>/dev/null || true)
+_TEL_START=$(date +%s)
+_SESSION_ID="$$-$(date +%s)"
+echo "BRANCH: $_BRANCH"
+echo "MOBILE_PLATFORM: $_MOBILE_PLATFORM"
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"mobile-qa","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
+```
+
 ---
 
 # /mobile-qa
 
-Run this after `/mobile-security` and before `/analytics-audit`. This skill guides actual testing on simulators, emulators, or physical devices and ensures the app meets store submission requirements.
+Manual + automated QA checklist across the simulator matrix. Run in profile mode, not debug.
+Debug mode hides real performance issues. Profile mode shows the truth.
 
-## Use when
+---
 
-- Writing or reviewing mobile tests.
-- Preparing for App Store / Play submission.
-- Running an accessibility audit.
-- Debugging device-specific issues.
-- Creating a device coverage strategy.
-- Reviewing a PR for test gaps.
+## Step 0: Build mode check
 
-## Inputs
+```bash
+# Flutter: confirm profile or release build, not debug
+flutter build apk --profile 2>/dev/null | tail -5 || echo "Build check: run manually"
+# Check that you're not using --debug flag anywhere in CI for QA runs
+grep -r "flutter run --debug\|flutter test.*debug" .github/ Makefile 2>/dev/null | head -5
+```
 
-Collect or infer:
+If the QA is being run against a debug build, warn the user: performance numbers are
+meaningless in debug mode. Offer to rebuild in profile mode before continuing.
 
-- Platform: `flutter`, `swift`, `kotlin`, or `expo`.
-- Target OS: iOS, Android, or both.
-- What changed: diff, PR, or feature description.
-- Test stack: what frameworks are used (XCTest, Espresso, Flutter test, etc.).
-- Device target: which form factors matter (phone, tablet, foldable).
-- Whether the change touches accessibility, gestures, or device-specific features.
+---
 
-If platform is missing:
-- Read `~/.gstack/config` or project docs.
-- If still unclear, ask one concise question before proceeding.
+## Step 1: Simulator matrix
 
-## Review standard
+Run QA against this matrix. Skip simulators not installed — but flag the gap.
 
-### 1. Test coverage
-- Unit tests cover business logic, not UI.
-- Integration tests cover critical flows (auth, checkout, onboarding).
-- Widget/component tests cover edge cases and error states.
-- No tests that only assert "works on my machine."
+**iOS simulators:**
+```bash
+xcrun simctl list devices available 2>/dev/null | grep -E "iPhone SE|iPhone 16 Pro|iPhone 16 Pro Max|iPad Pro" | head -10
+```
 
-### 2. Device and OS coverage
-- Test on at least one iOS version below the minimum supported.
-- Test on at least one Android API level below the minimum supported.
-- Cover both light and dark mode.
-- Cover both portrait and landscape if applicable.
-- Account for notch/home indicator areas on newer devices.
+| Device | Why |
+|---|---|
+| iPhone SE (3rd gen) | Smallest screen, no Dynamic Island, oldest supported baseline |
+| iPhone 16 Pro | Dynamic Island, ProMotion 120Hz, latest iOS |
+| iPhone 16 Pro Max | Largest iPhone, layout stress test |
+| iPad Pro 13" (if iPad supported) | Tablet layout, split-screen |
 
-### 3. Accessibility testing
-- VoiceOver/TalkBack navigation works through new flows.
-- Dynamic Type scales UI without breaking layouts.
-- Minimum tap target size (44x44pt iOS, 48dp Android).
-- Color contrast meets WCAG AA (4.5:1 for normal text).
-- No information conveyed by color alone.
-- Reduced motion setting respected.
+**Android emulators:**
+```bash
+emulator -list-avds 2>/dev/null | head -10
+```
 
-### 4. Store submission checks
-- All required metadata populated (descriptions, screenshots, keywords).
-- Privacy nutrition labels accurate (iOS).
-- Data use disclosure complete (Android).
-- Build version and build number monotonically increasing.
-- No debug code or verbose logging in release builds.
-- Crash reporting integrated and tested.
+| Device | Why |
+|---|---|
+| Pixel 7 (API 33) | Stock Android, reference device |
+| Pixel 6a (API 32) | Mid-range performance baseline |
+| Samsung Galaxy S24 (API 35) | Most-used Android OEM skin (One UI) |
+| API 26 emulator | Minimum supported SDK test |
 
-### 5. Performance at scale
-- Launch time under 2 seconds on target devices.
-- Scrolling smooth (60fps) with realistic data volumes.
-- No memory leaks from navigation or async operations.
-- Offline scenarios tested (no crashes, graceful degradation).
+For each device, record results in the output table at the end.
 
-### 6. Edge cases
-- Network timeout and offline mode.
-- Low storage warning.
-- Background/foreground transitions.
-- Notification permission denied.
-- Location permission denied.
-- Biometric unavailable or failed.
+---
 
-## Output format
+## Step 2: Cold start time
 
-Use this exact structure:
+```bash
+# Flutter iOS (Instruments)
+# Open Instruments -> Time Profiler -> record launch
+# Or use: flutter run --profile and check "UI thread" in DevTools
 
-### Verdict
-One paragraph with a blunt recommendation:
-- `PASS`
-- `PASS WITH WARNINGS`
-- `FAIL`
+# Android: measure cold start with adb
+adb shell am force-stop $(grep applicationId app/build.gradle | head -1 | awk -F'"' '{print $2}') 2>/dev/null
+adb shell am start-activity -W -n "$(grep applicationId app/build.gradle | head -1 | awk -F'"' '{print $2}')/$(grep mainActivity AndroidManifest.xml 2>/dev/null | head -1)" 2>/dev/null | grep "TotalTime"
+```
 
-### Critical issues
-Bullets only. Include only issues that should block submission.
+Targets:
+- iOS on iPhone 13 or newer: cold start to interactive < 1 second
+- Android on Pixel 6a (mid-range): cold start to interactive < 2 seconds
 
-### Warnings
-Bullets only. Important but non-blocking.
+Anything over 2 seconds on mid-range Android is a retention risk. Users who wait > 3 seconds
+on first open have 50%+ higher next-session churn. Flag if over target.
 
-### Platform-specific notes
-Split into:
-- `iOS`
-- `Android`
-- `Flutter / shared`
-Only include sections that apply.
+---
 
-### Recommended test plan
-Give the most opinionated test approach for the change.
+## Step 3: Scroll performance (jank)
 
-### Build checklist
-Provide a short, execution-ready checklist for QA.
+```bash
+# Flutter: open DevTools Performance tab
+flutter run --profile
+# In DevTools: open Performance tab, scroll the feed/list, look for red frames (>16ms)
+# Target: 99% of frames under 16ms (60fps), 99.9% under 8.3ms (120fps ProMotion)
+echo "Open Flutter DevTools -> Performance -> scroll the primary feed/list for 30 seconds"
+echo "Record: avg frame time, p99 frame time, number of red frames"
+```
 
-## Style
+Manual checklist:
+- [ ] Primary list/feed: scroll at normal speed for 30 seconds — no visible stutter
+- [ ] Primary list/feed: fast fling from top to bottom — smooth deceleration, no dropped frames
+- [ ] Image-heavy screens: images load progressively, no layout jump when images appear
+- [ ] Animated transitions between routes: no jank on push/pop
+- [ ] Bottom sheet open/close: smooth, no stutter on first open
+- [ ] Keyboard open/close: layout adjusts smoothly, no content jump
 
-- Be direct and specific.
-- Prioritize real device testing over emulator where possible.
-- Flag device-specific issues that simulators miss.
-- Don't suggest testing everything — focus on risk areas.
-- Recommend specific tools (like Fastlane for iOS, Firebase Test Lab for Android).
+Flag any scenario where visible frame drops occur.
 
-## Mobile-specific checks
+---
 
-Always check for:
+## Step 4: Keyboard and form behavior
 
-- Safe area handling on notched devices.
-- Keyboard avoidance on forms.
-- Gesture conflict with system gestures.
-- Dark mode rendering issues.
-- Dynamic Type overflow.
-- Simulator vs device behavior gaps.
+Manual checklist per platform:
 
-## Examples
+**iOS:**
+- [ ] Form fields scroll above keyboard when focused (not hidden behind it)
+- [ ] "Next" button on keyboard moves focus to the next field
+- [ ] "Done" / "Return" on last field dismisses keyboard
+- [ ] Dismissing keyboard by tapping outside works on all screens
+- [ ] Floating-above-keyboard CTA remains visible when keyboard is open
 
-Good prompts:
-- `/mobile-qa create a test plan for this checkout flow change`
-- `/mobile-qa audit this onboarding flow for accessibility issues`
-- `/mobile-qa review the PR for missing test coverage`
+**Android:**
+- [ ] `adjustResize` or `adjustPan` correctly applied — form fields visible above keyboard
+- [ ] Keyboard does not cover the primary CTA on any form screen
+- [ ] Predictive text bar does not obscure content
 
-Bad prompts:
-- `/mobile-qa test the app`
-- `/mobile-qa check for bugs`
+**Flutter:**
+- [ ] `resizeToAvoidBottomInset: true` (default) on all scaffolds with forms
+- [ ] `SingleChildScrollView` wrapping form content — keyboard open → form scrollable
+
+---
+
+## Step 5: Safe area and notch rendering
+
+```bash
+# Check for SafeArea widget usage in Flutter
+grep -r "SafeArea\|MediaQuery.of.*padding\|viewPadding" lib/ --include="*.dart" 2>/dev/null | wc -l
+# Check for unsafe hardcoded top padding
+grep -r "SizedBox(height: 44\|SizedBox(height: 48\|padding.*top.*44\|padding.*top.*48" lib/ --include="*.dart" 2>/dev/null | head -10
+```
+
+Manual checklist:
+- [ ] iPhone 16 Pro (Dynamic Island): status bar area is not occluded by app content
+- [ ] iPhone SE: no safe-area violation at bottom (home indicator area)
+- [ ] Android with gesture navigation: bottom content not cut off by nav bar
+- [ ] Android with 3-button navigation: bottom content not cut off
+- [ ] Landscape orientation: safe areas applied on both sides (notch left or right)
+
+---
+
+## Step 6: Permission dialogs
+
+Manual checklist. This matters for both UX and App Store review.
+
+- [ ] Camera permission: dialog appears when user taps a camera-invoking action, not on launch
+- [ ] Push notification permission: NOT asked on first launch. Asked after user demonstrates
+  intent (e.g., after completing onboarding step 3, after first order, after 3rd session)
+- [ ] Location permission: asked contextually, with in-app pre-prompt explaining the reason
+- [ ] Contacts / microphone / calendar: only if feature-relevant, only at point of use
+- [ ] If any permission is denied: app degrades gracefully, offers a settings deep-link
+
+---
+
+## Step 7: Background / foreground state
+
+Manual checklist:
+- [ ] Home button / swipe up → background: app state preserved correctly
+- [ ] Return to app after 30 seconds: data not stale, no blank screen, no spinner stuck
+- [ ] Return to app after 5 minutes: correct auth state (not logged out unless session expired)
+- [ ] Return to app after phone call: UI state intact
+- [ ] Low memory condition: app resumes correctly after OS terminates it in background
+
+---
+
+## Step 8: Offline behavior
+
+Manual checklist:
+- [ ] Airplane mode on cold launch: app shows offline state, not crash or blank screen
+- [ ] Airplane mode mid-session: graceful error message, retry affordance, no data loss
+- [ ] Slow network (throttled to 3G): app is usable — loading states visible, no silent timeout
+- [ ] Offline → back online: app recovers without requiring manual reload on all key screens
+
+---
+
+## Step 9: Accessibility device tests
+
+```bash
+echo "Enable VoiceOver (iOS: Settings > Accessibility > VoiceOver) or TalkBack (Android)"
+echo "Navigate the core user flow (onboarding → first key action) using only VoiceOver/TalkBack"
+```
+
+Manual checklist:
+- [ ] Every interactive element is reachable via VoiceOver/TalkBack swipe navigation
+- [ ] All icon-only buttons have semantic labels (not "button button" or empty)
+- [ ] Modal/sheet correctly traps focus (VoiceOver cannot escape to content behind the modal)
+- [ ] Loading indicators are announced to screen reader
+- [ ] Error messages are announced to screen reader when they appear
+- [ ] Reading order matches visual top-to-bottom, left-to-right order
+
+---
+
+## Step 10: QA results table
+
+Output a results table for each device tested:
+
+QA MATRIX RESULTS
+═══════════════════════════════════════════════════════════
+Date: {date}
+Build: {version/build number}
+Branch: {branch}
+Device	OS	Cold Start	Scroll	Keyboard	Safe Area	Offline	A11y
+iPhone SE 3	iOS 17	<time>ms	PASS/FAIL	PASS/FAIL	PASS/FAIL	PASS/FAIL	PASS/FAIL
+iPhone 16 Pro	iOS 18	<time>ms	...	...	...	...	...
+Pixel 7	Android 14	<time>ms	...	...	...	...	...
+
+Critical failures: N
+Warnings: N
+
+[List each failure with: Device | Screen | Issue | Severity]
+═══════════════════════════════════════════════════════════
+
+Write this table to `~/.gstack/projects/<slug>/mobile-qa-<branch>-<date>.md` for historical
+reference.
+
+---
+
+## Step 11: Completion
+
+```bash
+_TEL_END=$(date +%s)
+_TEL_DUR=$(( _TEL_END - _TEL_START ))
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"mobile-qa","event":"completed","branch":"'"$(git branch --show-current 2>/dev/null || echo unknown)"'","outcome":"OUTCOME","duration_s":"'"$_TEL_DUR"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null || true
+```
+
+If any CRITICAL failures, block progression to `/store-ship` and invoke AskUserQuestion
+asking whether to fix now or defer with a documented known issue.
