@@ -1,147 +1,302 @@
 ---
 name: mobile-security
-description: Security audit for mobile apps — review code, config, and architecture for secrets, data handling, certificate pinning, secure storage, and app-store compliance.
+preamble-tier: 4
+version: 1.0.0
+description: |
+  Mobile-specific security review. Checks keychain/keystore usage, certificate pinning,
+  deep link validation, secret leakage, network security config, biometric gate integrity,
+  obfuscation, screenshot prevention, and API key hygiene. Replaces /cso for mobile apps.
+  Run after /review on any branch touching auth, payments, permissions, or data storage.
+  (gstack-mobile)
+allowed-tools:
+  - Bash
+  - Read
+  - Grep
+  - Glob
+  - Write
+  - AskUserQuestion
+  - WebSearch
+---
+<!-- gstack-mobile: mobile-security/SKILL.md -->
+
+## Preamble (run first)
+
+```bash
+_UPD=$(~/.claude/skills/gstack/bin/gstack-update-check 2>/dev/null || true)
+[ -n "$_UPD" ] && echo "$_UPD" || true
+_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+_MOBILE_PLATFORM=$(~/.claude/skills/gstack/bin/gstack-config get mobile_platform 2>/dev/null || echo "unknown")
+_TEL=$(~/.claude/skills/gstack/bin/gstack-config get telemetry 2>/dev/null || true)
+_TEL_START=$(date +%s)
+_SESSION_ID="$$-$(date +%s)"
+echo "BRANCH: $_BRANCH"
+echo "MOBILE_PLATFORM: $_MOBILE_PLATFORM"
+mkdir -p ~/.gstack/analytics
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"mobile-security","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
+```
+
 ---
 
 # /mobile-security
 
-Run this after `/hig-review` and before `/mobile-qa` for any mobile change that touches authentication, payments, data storage, or network calls. This skill audits the implementation for security gaps and flags issues that could fail App Store / Play review or expose user data.
+The mobile threat model is not the web threat model. There's no SQLi, but there is plaintext
+token storage, interceptable deep links, unobfuscated APKs, and screenshot leakage on payment
+screens. This review covers all of it.
 
-## Use when
+---
 
-- Adding or changing authentication (OAuth, biometric, passcode, session handling).
-- Implementing payment processing or storing payment tokens.
-- Storing sensitive data locally (credentials, tokens, PII, health data).
-- Making network calls that handle user data.
-- Adding third-party SDKs with native code.
-- Building encryption, keychain, or secure-storage features.
-- Preparing for App Store / Play submission and you want a pre-flight security check.
+## Step 0: Detect platform and scope
 
-## Inputs
+```bash
+_PLATFORM=$(~/.claude/skills/gstack/bin/gstack-config get mobile_platform 2>/dev/null || echo "unknown")
+echo "PLATFORM: $_PLATFORM"
+[ -f pubspec.yaml ] && echo "LOCKFILE: pubspec.lock" && cat pubspec.lock 2>/dev/null | grep -E "flutter_secure_storage|dio|http" | head -20
+[ -f package.json ] && cat package.json 2>/dev/null | grep -E "expo-secure-store|axios|fetch" | head -10
+find . -maxdepth 4 -name "*.plist" -not -path "*/node_modules/*" 2>/dev/null | head -5
+find . -maxdepth 4 -name "AndroidManifest.xml" 2>/dev/null | head -3
+find . -maxdepth 4 -name "network_security_config.xml" 2>/dev/null | head -3
+```
 
-Collect or infer:
+---
 
-- Platform: `flutter`, `swift`, `kotlin`, or `expo`.
-- Target OS: iOS, Android, or both.
-- What changed: diff, PR, or list of modified files.
-- Auth flow: how users authenticate (social, email, biometric, none).
-- Storage: what data is persisted and where (Keychain, UserDefaults, SharedPreferences, files, SQLite).
-- Network: API endpoints, whether TLS pinning is used.
-- Third-party SDKs: any new native libraries or Flutter packages.
+## Step 1: Secret storage
 
-If platform is missing:
-- Read `~/.gstack/config` or project docs.
-- If still unclear, ask one concise question before proceeding.
+**What to look for:**
 
-## Review standard
+For Flutter: search for `SharedPreferences` storing tokens, passwords, or session IDs.
+These are unencrypted. Must use `flutter_secure_storage`.
 
-Audit across these dimensions:
+```bash
+grep -r "SharedPreferences\|prefs\.set" lib/ --include="*.dart" -l 2>/dev/null
+grep -r "flutter_secure_storage\|SecureStorage" lib/ --include="*.dart" -l 2>/dev/null
+```
 
-### 1. Secrets and credentials
-- No hardcoded API keys, secrets, or tokens in source code.
-- No credentials in logs, crash reports, or analytics.
-- Service account keys (Play, Firebase) stored outside repo, loaded at runtime.
-- `.env` files or local configs with secrets are gitignored.
-- Private keys for ASC signing stored in secure keychain, not repo.
+For Swift: search for `UserDefaults` storing auth tokens or user credentials.
+Must use `Keychain` (via `KeychainAccess` or `Security` framework directly).
 
-### 2. Secure storage
-- iOS: Keychain with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` or equivalent.
-- Android: EncryptedSharedPreferences or Keystore-backed encryption.
-- Flutter: flutter_secure_storage or platform-native plugins, not plain SharedPreferences.
-- Tokens, refresh tokens, and session IDs in secure storage, not UserDefaults/SharedPreferences.
-- Encryption keys derived properly (PBKDF2, not simple PBKDF).
+```bash
+grep -r "UserDefaults.*token\|UserDefaults.*password\|UserDefaults.*secret\|UserDefaults.*key" --include="*.swift" -ri . 2>/dev/null
+grep -r "Keychain\|SecItemAdd\|KeychainAccess" --include="*.swift" -r . 2>/dev/null | head -10
+```
 
-### 3. Network security
-- TLS 1.2+ required, TLS 1.3 preferred.
-- Certificate pinning for sensitive endpoints (auth, payments, user data).
-- No cleartext HTTP in production (ATS on iOS, network_security_config on Android).
-- WebViews properly configured (no JavaScript interface exposure unless needed).
-- No sensitive data in URL query parameters (use POST body or headers).
+For Kotlin/Android: search for `SharedPreferences` storing sensitive values.
+Must use `EncryptedSharedPreferences` (Jetpack Security) or Android Keystore.
 
-### 4. Authentication and sessions
-- OAuth 2.0 with secure flow (PKCE for mobile).
-- Access tokens short-lived, refresh tokens stored securely.
-- Biometric auth requires fallback for device incompatibility.
-- Session invalidation on logout is complete (local + remote).
-- No "remember me" on shared devices without re-auth.
+```bash
+grep -r "getSharedPreferences\|putString.*token\|putString.*password" --include="*.kt" -r . 2>/dev/null
+grep -r "EncryptedSharedPreferences\|KeyStore\|MasterKey" --include="*.kt" -r . 2>/dev/null | head -10
+```
 
-### 5. Data handling
-- PII, health data, or financial data encrypted at rest.
-- No sensitive data in clipboard without user action.
-- Analytics event names and properties don't leak PII.
-- Logs stripped of credentials, tokens, and PII in release builds.
-- Crash reporting uses non-identifiable identifiers.
+For Expo: search for `AsyncStorage` storing sensitive values.
+Must use `expo-secure-store`.
 
-### 6. Binary and runtime
-- No debugging flags left in release builds.
-- ProGuard/R8 stripping on Android, Symbolication handled.
-- No verbose error messages exposed to users.
-- Third-party SDKs come from trusted sources, audited for suspicious permissions.
-- Code signing configured properly for distribution.
+```bash
+grep -r "AsyncStorage.*token\|AsyncStorage.*password\|AsyncStorage.*secret" --include="*.ts" --include="*.tsx" -r . 2>/dev/null
+grep -r "expo-secure-store\|SecureStore" --include="*.ts" --include="*.tsx" -r . 2>/dev/null | head -10
+```
 
-### 7. App store compliance
-- No hidden file types or functionality.
-- No private APIs called.
-- No uninstalled code paths that bypass review.
-- Remote code loading disabled unless explicitly approved.
-- Privacy manifest present (iOS), permissions declared (Android).
+Flag any token, password, session ID, or secret stored outside the secure enclave equivalent.
+This is CRITICAL.
 
-## Output format
+---
 
-Use this exact structure:
+## Step 2: Network security
 
-### Verdict
-One paragraph with a blunt recommendation:
-- `PASS`
-- `PASS WITH WARNINGS`
-- `FAIL`
+**iOS — ATS (App Transport Security):**
 
-### Critical issues
-Bullets only. Include only issues that should block merge or ship.
+```bash
+find . -name "Info.plist" -not -path "*/node_modules/*" 2>/dev/null | xargs grep -l "NSAllowsArbitraryLoads" 2>/dev/null
+find . -name "Info.plist" -not -path "*/node_modules/*" 2>/dev/null | xargs grep -A2 "NSAllowsArbitraryLoads" 2>/dev/null
+```
+
+`NSAllowsArbitraryLoads: true` in a production build is a CRITICAL finding and will trigger
+App Review scrutiny. It must be `false` or not present. Exceptions for specific domains
+(`NSExceptionDomains`) are acceptable if the domains are necessary and documented.
+
+**Android — Network Security Config:**
+
+```bash
+find . -name "AndroidManifest.xml" 2>/dev/null | xargs grep "usesCleartextTraffic\|networkSecurityConfig" 2>/dev/null
+find . -name "network_security_config.xml" 2>/dev/null | xargs cat 2>/dev/null
+```
+
+`android:usesCleartextTraffic="true"` in the production manifest is CRITICAL.
+`cleartextTrafficPermitted="true"` in network security config for non-debug domains is CRITICAL.
+
+**Certificate pinning:**
+
+```bash
+grep -r "TrustManager\|SSLPinning\|CertificatePinner\|TrustKit\|PublicKeyPins" \
+  --include="*.dart" --include="*.swift" --include="*.kt" --include="*.ts" \
+  -r . 2>/dev/null | head -20
+```
+
+Flag if no certificate pinning is present on production HTTP clients in apps handling
+payments, medical data, or PII. Note whether a pin rotation strategy exists.
+
+---
+
+## Step 3: Deep link and URL scheme security
+
+```bash
+find . -name "Info.plist" 2>/dev/null | xargs grep -A5 "CFBundleURLSchemes\|LSApplicationQueriesSchemes" 2>/dev/null
+find . -name "AndroidManifest.xml" 2>/dev/null | xargs grep -B2 -A10 "intent-filter" 2>/dev/null | grep -E "scheme|host|VIEW" | head -20
+grep -r "openURL\|handleDeepLink\|onDeepLink\|Uri.parse" \
+  --include="*.dart" --include="*.swift" --include="*.kt" --include="*.ts" \
+  -r . 2>/dev/null | head -20
+```
+
+Check:
+- Custom URL schemes (`myapp://`) can be intercepted by any app on the device.
+  Auth callbacks must use Universal Links (iOS) or App Links (Android), not custom schemes.
+- Universal Links: `apple-app-site-association` file must be hosted at `/.well-known/apple-app-site-association`.
+- App Links: `assetlinks.json` must be hosted at `/.well-known/assetlinks.json`.
+- Deep link handler must validate the incoming URL before trusting any parameters.
+  Flag if URL params are used directly in auth or navigation without validation.
+
+---
+
+## Step 4: API key and secret hygiene
+
+```bash
+# Check assets and config files for hardcoded secrets
+grep -r "api_key\|apiKey\|secret\|password\|token\|private_key" \
+  --include="*.json" --include="*.yaml" --include="*.yml" --include="*.env" \
+  --include="*.plist" --include="*.xml" \
+  -r . --exclude-dir=node_modules --exclude-dir=.git 2>/dev/null \
+  | grep -v ".env.example\|placeholder\|YOUR_KEY\|REPLACE_ME\|TODO" | head -30
+
+# Flutter: check pubspec.yaml and assets/
+grep -r "key\|secret\|token" assets/ --include="*.json" --include="*.yaml" 2>/dev/null | head -10
+
+# Expo: check app.config.js / app.json for exposed secrets
+grep -E "apiKey|secret|token|password" app.config.js app.json 2>/dev/null | head -10
+
+# Check if .env files are gitignored
+cat .gitignore 2>/dev/null | grep -E "\.env$|\.env\." | head -5
+```
+
+Any real secret value in a committed file is CRITICAL. API keys embedded in `app.config.js`
+or `app.json` are exposed in the built JS bundle — also CRITICAL.
+
+---
+
+## Step 5: Build configuration (release-mode security)
+
+**Flutter:**
+```bash
+grep -r "kDebugMode\|kProfileMode\|kReleaseMode" lib/ --include="*.dart" 2>/dev/null | grep -v "kReleaseMode.*assert\|kDebugMode.*false" | head -10
+# Check for obfuscation flags in build scripts / CI
+grep -r "obfuscate\|split-debug-info" . --include="*.sh" --include="*.yaml" --include="*.yml" -r 2>/dev/null | head -10
+```
+
+Release builds must use `--obfuscate --split-debug-info=./debug-info`. Flag if missing from
+CI build scripts.
+
+**Android:**
+```bash
+grep -r "minifyEnabled\|proguardFiles\|shrinkResources" --include="*.gradle" --include="*.gradle.kts" -r . 2>/dev/null
+```
+
+`minifyEnabled false` in the release build type is a WARN. ProGuard/R8 rules must be present.
+
+**iOS:**
+```bash
+find . -name "*.xcconfig" 2>/dev/null | xargs grep -l "DEBUG\|RELEASE" 2>/dev/null
+grep -r "DEBUG\b" --include="*.swift" -r . 2>/dev/null | grep -v "//\|#if DEBUG" | head -10
+```
+
+Production builds must not have debug logging, analytics verbose mode, or network proxying
+enabled.
+
+---
+
+## Step 6: Biometric and auth gate integrity
+
+```bash
+grep -r "LocalAuthentication\|BiometricPrompt\|TouchID\|FaceID\|LAContext\|BiometricManager" \
+  --include="*.dart" --include="*.swift" --include="*.kt" --include="*.ts" \
+  -r . 2>/dev/null | head -20
+```
+
+Check:
+- Is the biometric gate used to protect sensitive operations (payments, viewing secrets),
+  or is it only used as a login convenience?
+- Does failure fallback to passcode (acceptable) or to no auth (CRITICAL)?
+- On Android: is `BiometricPrompt.AuthenticationCallback.onAuthenticationFailed` handled,
+  or does failure silently succeed?
+
+---
+
+## Step 7: Screenshot prevention (sensitive screens)
+
+```bash
+grep -r "FLAG_SECURE\|WindowManager.LayoutParams.FLAG_SECURE" --include="*.kt" --include="*.java" -r . 2>/dev/null
+grep -r "allowsScreenshots\|UIScreen.main.isCaptured\|\.secured\b" --include="*.swift" -r . 2>/dev/null
+grep -r "PreventScreenCapture\|preventScreenCapture" --include="*.dart" --include="*.ts" -r . 2>/dev/null
+```
+
+Payment screens, credentials screens, and screens showing sensitive personal data must
+prevent screenshots. Flag if `FLAG_SECURE` (Android) is absent on such screens.
+
+---
+
+## Step 8: Output format
+
+Use this structure:
+
+---
+
+### Security verdict
+
+`PASS` / `PASS WITH WARNINGS` / `FAIL`
+
+One paragraph. Direct. What the biggest risk is and what it enables for an attacker.
+
+---
+
+### Critical findings
+
+`[CRITICAL]` — MUST fix before shipping to production.
+
+Format: `[CRITICAL] (check category) file:line — problem — fix`
+
+---
 
 ### Warnings
-Bullets only. Important but non-blocking.
 
-### Platform-specific notes
-Split into:
-- `iOS`
-- `Android`
-- `Flutter / shared`
-Only include sections that apply.
+`[WARN]` — fix before next major version or before handling sensitive user data.
 
-### Recommended fix
-Give the most opinionated fix path, not a menu of equal options.
+---
 
-### Build checklist
-Provide a short, execution-ready checklist.
+### What's covered
 
-## Style
+Quick table for traceability:
 
-- Be direct and specific.
-- Prefer "do this" over "consider this."
-- Flag actual vulnerabilities, not theoretical concerns.
-- Do not default to "use a library" without specifying which and why.
-- Do not recommend over-engineering (e.g., full app attestation for a simple app).
+| Check | Status | Notes |
+|---|---|---|
+| Secret storage (Keychain/Keystore) | PASS/FAIL/SKIP | |
+| ATS / Network Security Config | PASS/FAIL/SKIP | |
+| Certificate pinning | PASS/FAIL/SKIP | |
+| Deep link validation | PASS/FAIL/SKIP | |
+| API key hygiene | PASS/FAIL/SKIP | |
+| Release obfuscation | PASS/FAIL/SKIP | |
+| Biometric gate integrity | PASS/FAIL/SKIP | |
+| Screenshot prevention | PASS/FAIL/SKIP | |
 
-## Mobile-specific checks
+SKIP = not applicable to this platform or not relevant to the current diff.
 
-Always check for:
+---
 
-- Keychain/Keystore usage for tokens.
-- Encrypted storage, not plain UserDefaults/SharedPreferences.
-- Certificate pinning on auth/payment endpoints.
-- ATS / network_security_config enabled.
-- No secrets in source or logs.
-- Proper logout (local + remote token revocation).
-- Privacy manifest and permission declarations.
+## Step 9: Completion
 
-## Examples
+```bash
+_TEL_END=$(date +%s)
+_TEL_DUR=$(( _TEL_END - _TEL_START ))
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"mobile-security","event":"completed","branch":"'"$(git branch --show-current 2>/dev/null || echo unknown)"'","outcome":"OUTCOME","duration_s":"'"$_TEL_DUR"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null || true
+if [ "$_TEL" != "off" ]; then
+echo '{"skill":"mobile-security","duration_s":"'"$_TEL_DUR"'","outcome":"OUTCOME","session":"'"$_SESSION_ID"'","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
+fi
+```
 
-Good prompts:
-- `/mobile-security audit this OAuth flow implementation for Flutter`
-- `/mobile-security check whether this payment SDK integration is storing tokens securely`
-- `/mobile-security review these Android network calls for certificate pinning gaps`
-
-Bad prompts:
-- `/mobile-security make it secure`
-- `/mobile-security check the app`
+Replace `OUTCOME` with `success`, `fail`, or `abort`.
