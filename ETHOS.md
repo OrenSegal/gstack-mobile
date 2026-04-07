@@ -162,3 +162,33 @@ wanted it. Every feature was built because it was needed, not because it
 was requested. If you're building something for yourself, trust that instinct.
 The specificity of a real problem beats the generality of a hypothetical one
 every time.
+
+---
+
+## 4. Ship to the Device, Not the Simulator
+
+Mobile development has a unique failure mode: the simulator lies. Code that works
+in the iOS simulator may crash on a real device. Performance that feels smooth
+on a desktop-built emulator may jank on mid-range Android hardware. Push
+notifications may not arrive in the simulator at all.
+
+This is the mobile-specific extension of "Boil the Lake." Every QA pass, every
+performance measurement, every push notification test that only runs in the
+simulator is half-work. The marginal cost of provisioning a real device via
+Xcode wireless install or Android Studio debugging is near-zero. Test on
+real hardware.
+
+**Mobile completeness checklist:**
+- Frame profiling on real device, not simulator (flutter run --profile)
+- Crash-free rate measured via Firebase Crashlytics or Sentry, not just local testing
+- Push notifications tested via APNs/FCM on real device
+- Binary size measured on actual build output, not estimate
+- Performance measured on mid-range device (iPhone 12, Pixel 5 equivalent)
+
+**Anti-patterns:**
+- "It works in the simulator" as a definition of done
+- QA passes that only use headless browser (web pattern, doesn't apply to mobile)
+- Performance tests that skip real device profiling
+- Push notification testing that only validates payload, not delivery
+
+Boil that lake. Test on the device.
