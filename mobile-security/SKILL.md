@@ -54,11 +54,15 @@ echo "iOS: $_IS_IOS, Android: $_IS_ANDROID"
 
 # Detect framework
 if [ -f "pubspec.yaml" ]; then
-  grep -q "flutter:" pubspec.yaml && _FRAMEWORK="Flutter" || _FRAMEWORK="Expo"
+  _FRAMEWORK="Flutter"
+elif [ -f "package.json" ] && grep -q '"expo"' package.json 2>/dev/null; then
+  _FRAMEWORK="Expo"
 elif [ -f "package.json" ]; then
   _FRAMEWORK="React Native"
-elif [ -d "ios" ] && [ -f "ios/Runner.xcodeproj/project.pbxproj" ]; then
+elif find . -maxdepth 1 -name "*.xcodeproj" -type d 2>/dev/null | grep -q .; then
   _FRAMEWORK="Swift"
+elif [ -f "app/build.gradle" ] || [ -f "app/build.gradle.kts" ]; then
+  _FRAMEWORK="Kotlin"
 else
   _FRAMEWORK="unknown"
 fi
@@ -67,19 +71,39 @@ echo "Framework: $_FRAMEWORK"
 
 ---
 
-## Step 1: Secrets and credentials audit
+## Step 1: Base security audit — delegate to /cso
+
+Run `/cso --daily` first. It covers secrets archaeology, dependency supply chain, CI/CD
+pipeline security, and OWASP Top 10 (web surface). Do not duplicate those checks here.
 
 ```bash
-# Check for hardcoded API keys, tokens, credentials
-grep -rn "api[_-]key\|api[_-]secret\|password\|secret\|token\|credential\|bearer\|authorization" \
-  lib/ --include="*.dart" --include="*.swift" --include="*.kt" 2>/dev/null \
-  | grep -v "// " | grep -v "null\|undefined\|placeholder\|YOUR_" | head -30
+# Verify /cso is available before delegating
+if [ -f ~/.claude/skills/gstack/cso/SKILL.md ]; then
+  echo "/cso available — delegating secrets archaeology to /cso --daily"
+else
+  echo "WARN: /cso not found at ~/.claude/skills/gstack/cso/SKILL.md — running fallback scan below"
+fi
+```
 
-# Check .env files are gitignored
+Read the `/cso` skill file at `~/.claude/skills/gstack/cso/SKILL.md` and follow its
+`--daily` mode (high-confidence findings only). When `/cso` completes, continue below
+with the mobile-specific layers that `/cso` does not cover.
+
+If `/cso` is not available (not installed or preamble fails), run the fallback:
+
+```bash
+# Fallback secrets scan (only if /cso unavailable)
+grep -rn "api[_-]key\|api[_-]secret\|password\|secret\|token\|credential\|bearer" \
+  lib/ ios/ android/ src/ \
+  --include="*.dart" --include="*.swift" --include="*.kt" --include="*.ts" --include="*.tsx" \
+  --exclude-dir=".dart_tool" --exclude-dir="build" --exclude-dir="node_modules" \
+  --exclude-dir=".gradle" --exclude="*.lock" --exclude="*.g.dart" \
+  2>/dev/null \
+  | grep -v "^\s*//" \
+  | grep -v "null\|undefined\|placeholder\|YOUR_\|example\|test\|spec\|mock" \
+  | head -30
+
 cat .gitignore 2>/dev/null | grep -E "\.env|credentials|secrets" || echo "WARN: No .env in gitignore"
-
-# Check for secrets in config files
-find . -name "*.json" -o -name "*.yaml" 2>/dev/null | xargs grep -l "apiKey\|secret\|token" 2>/dev/null | head -10
 ```
 
 ---
@@ -89,36 +113,110 @@ find . -name "*.json" -o -name "*.yaml" 2>/dev/null | xargs grep -l "apiKey\|sec
 ### iOS Keychain
 
 ```bash
-# Check for Keychain usage
-grep -rn "Keychain\|SecItemAdd\|kSecClass" ios/ --include="*.swift" 2>/dev/null | head -10
+if [ "$_IS_IOS" = "1" ]; then
+  # Keychain usage — required for all sensitive values
+  grep -rn "SecItemAdd\|SecItemCopyMatching\|kSecClass\|kSecAttrAccessible" \
+    ios/ --include="*.swift" 2>/dev/null | head -10
 
-# Check for UserDefaults storing sensitive data
-grep -rn "UserDefaults\.standard\|NSUserDefaults" ios/ --include="*.swift" 2>/dev/null | head -10
+  # UserDefaults storing sensitive data (never store tokens/keys here)
+  grep -rn "UserDefaults\.standard\.\(set\|string\|object\)" \
+    ios/ --include="*.swift" 2>/dev/null | head -10
+
+  # CryptoKit usage (preferred for on-device crypto)
+  grep -rn "CryptoKit\|SymmetricKey\|AES\.GCM\|ChaChaPoly" \
+    ios/ --include="*.swift" 2>/dev/null | head -10
+
+  # LocalAuthentication (biometric) — FaceID/TouchID permission required
+  grep -rn "LocalAuthentication\|LAContext\|evaluatePolicy" \
+    ios/ --include="*.swift" 2>/dev/null | head -10
+  grep -rn "NSFaceIDUsageDescription" ios/ --include="*.plist" 2>/dev/null | head -3 \
+    || echo "WARN: NSFaceIDUsageDescription missing — required if using biometrics"
+
+  # App Transport Security — any exceptions are audit flags
+  grep -rn "NSExceptionAllowsInsecureHTTPLoads\|NSAllowsArbitraryLoads" \
+    ios/ --include="*.plist" 2>/dev/null | head -5
+fi
 ```
 
-**Required:** Use Keychain with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`.
+**iOS secure storage requirements:**
+- Keychain: `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` for auth tokens
+- Never: `UserDefaults` for secrets, `NSCoder` for sensitive model properties
+- CryptoKit for symmetric encryption over CommonCrypto (memory-safe, Swift-native)
+- App Attest (iOS 14+) for server-side integrity validation against jailbroken devices
 
 ### Android secure storage
 
 ```bash
-# Check for EncryptedSharedPreferences
-grep -rn "EncryptedSharedPreferences\|Jetpack\|security" android/ --include="*.kt" 2>/dev/null | head -10
+if [ "$_IS_ANDROID" = "1" ]; then
+  # Android Keystore (hardware-backed key storage — strongest option)
+  grep -rn "KeyStore\|KeyPairGenerator\|KeyGenerator\|AndroidKeyStore" \
+    android/ --include="*.kt" 2>/dev/null | head -10
 
-# Check for plain SharedPreferences
-grep -rn "SharedPreferences\|getSharedPreferences" android/ --include="*.kt" 2>/dev/null | head -10
+  # EncryptedSharedPreferences (MasterKey backed by Android Keystore)
+  grep -rn "EncryptedSharedPreferences\|MasterKey\|MasterKeys" \
+    android/ --include="*.kt" 2>/dev/null | head -10
+
+  # Plain SharedPreferences storing secrets (never acceptable for tokens)
+  grep -rn "getSharedPreferences\|PreferenceManager" \
+    android/ --include="*.kt" 2>/dev/null | head -10
+
+  # DataStore (Preferences/Proto) — safer than SharedPreferences for structured data
+  grep -rn "DataStore\|dataStore\|preferencesDataStore" \
+    android/ --include="*.kt" 2>/dev/null | head -10
+
+  # BiometricPrompt (unified fingerprint/FaceID API, replaces FingerprintManager)
+  grep -rn "BiometricPrompt\|BiometricManager\|FingerprintManager" \
+    android/ --include="*.kt" 2>/dev/null | head -10
+
+  # ProGuard/R8 — is obfuscation enabled for release builds?
+  grep -rn "minifyEnabled\|proguardFiles\|shrinkResources" \
+    android/app/build.gradle android/app/build.gradle.kts 2>/dev/null | head -10
+fi
 ```
 
-**Required:** Use EncryptedSharedPreferences or Keystore-backed encryption.
+**Android secure storage requirements:**
+- Android Keystore for private keys — hardware-backed on modern devices
+- `EncryptedSharedPreferences` (Jetpack Security) for sensitive preferences
+- `DataStore<Preferences>` (not `SharedPreferences`) for non-secret structured data
+- `minifyEnabled true` + ProGuard/R8 in release builds — obfuscates against reverse engineering
+- `FLAG_SECURE` on sensitive Activities to prevent screenshots/screen recording
 
 ### Flutter secure storage
 
 ```bash
-# Check for flutter_secure_storage
-grep -rn "flutter_secure_storage\|flutter_secure_storage" pubspec.yaml lib/ 2>/dev/null | head -10
+if [ "$_FRAMEWORK" = "Flutter" ]; then
+  # Check for flutter_secure_storage
+  grep -rn "flutter_secure_storage" pubspec.yaml lib/ 2>/dev/null | head -10
 
-# Check for plain storage of tokens
-grep -rn "SharedPreferences\|setString\|getString" lib/ --include="*.dart" 2>/dev/null | head -15
+  # Check for plain storage of tokens
+  grep -rn "SharedPreferences\|setString\|getString" lib/ --include="*.dart" 2>/dev/null | head -15
+fi
 ```
+
+### Expo / React Native secure storage
+
+```bash
+if [ "$_FRAMEWORK" = "Expo" ] || [ "$_FRAMEWORK" = "React Native" ]; then
+  # expo-secure-store (correct — uses iOS Keychain / Android Keystore)
+  grep -rn "expo-secure-store\|SecureStore\." \
+    src/ --include="*.ts" --include="*.tsx" package.json 2>/dev/null | head -10
+
+  # @react-native-async-storage for tokens (WRONG — plaintext storage)
+  grep -rn "@react-native-async-storage\|AsyncStorage" \
+    src/ --include="*.ts" --include="*.tsx" 2>/dev/null | head -10 \
+    | grep -i "token\|secret\|key\|auth\|session\|password" \
+    && echo "  CRITICAL: AsyncStorage used for sensitive data — move to expo-secure-store or react-native-keychain"
+
+  # react-native-keychain (correct for bare RN)
+  grep -rn "react-native-keychain\|Keychain\." \
+    src/ --include="*.ts" --include="*.tsx" package.json 2>/dev/null | head -5
+fi
+```
+
+**Expo/RN secure storage requirements:**
+- `expo-secure-store` (Expo) or `react-native-keychain` (bare RN) for all tokens and credentials
+- `AsyncStorage` is plaintext — never use for secrets, tokens, or auth state
+- Keychain Services (iOS) / Android Keystore backed by expo-secure-store are hardware-backed on modern devices
 
 ---
 
@@ -136,6 +234,13 @@ grep -rn "http://\|HttpURLConnection\|NSAllowsArbitraryLoads" \
 # Check ATS (iOS)
 grep -rn "NSAllowsArbitraryLoads\|NSExceptionAllowsInsecureHTTPLoads" ios/ --include="*.plist" 2>/dev/null | head -10
 
+# iOS URLCache: tokens cached in /Library/Caches survive app restart
+if [ "$_IS_IOS" = "1" ]; then
+  grep -rn "URLCache\|\.cachePolicy\|useProtocolCachePolicy\|returnCacheDataElseLoad" \
+    ios/ --include="*.swift" 2>/dev/null | head -5 \
+    || echo "  WARN: No explicit URLCache policy — sensitive responses may be cached on disk"
+fi
+
 # Check network_security_config (Android)
 find android/ -name "network_security_config.xml" 2>/dev/null | head -5
 ```
@@ -145,14 +250,22 @@ find android/ -name "network_security_config.xml" 2>/dev/null | head -5
 ## Step 4: Authentication and sessions
 
 ```bash
-# Check OAuth implementation
-grep -rn "OAuth\|PKCE\|auth\|login\|signIn" lib/ --include="*.dart" 2>/dev/null | head -20
-
-# Check for token storage
-grep -rn "accessToken\|refreshToken\|session\|token" lib/ --include="*.dart" 2>/dev/null | head -20
-
-# Check logout implementation
-grep -rn "logout\|signOut\|clear\|revoke" lib/ --include="*.dart" 2>/dev/null | head -15
+if [ "$_FRAMEWORK" = "Flutter" ] || [ "$_FRAMEWORK" = "Expo" ] || [ "$_FRAMEWORK" = "React Native" ]; then
+  grep -rn "OAuth\|PKCE\|auth\|login\|signIn" lib/ --include="*.dart" \
+    src/ --include="*.ts" --include="*.tsx" 2>/dev/null | head -20
+  grep -rn "accessToken\|refreshToken\|session\|token" lib/ --include="*.dart" \
+    src/ --include="*.ts" --include="*.tsx" 2>/dev/null | head -20
+  grep -rn "logout\|signOut\|clear\|revoke" lib/ --include="*.dart" \
+    src/ --include="*.ts" --include="*.tsx" 2>/dev/null | head -15
+fi
+if [ "$_IS_IOS" = "1" ]; then
+  grep -rn "OAuth\|PKCE\|ASWebAuthenticationSession\|signIn\|logout" \
+    ios/ --include="*.swift" 2>/dev/null | head -20
+fi
+if [ "$_IS_ANDROID" = "1" ]; then
+  grep -rn "OAuth\|PKCE\|signIn\|logout\|revoke" \
+    android/ --include="*.kt" 2>/dev/null | head -20
+fi
 ```
 
 ---
@@ -160,14 +273,24 @@ grep -rn "logout\|signOut\|clear\|revoke" lib/ --include="*.dart" 2>/dev/null | 
 ## Step 5: Binary and runtime security
 
 ```bash
-# Check for debugging flags in release
-grep -rn "debug\|Log\." lib/ --include="*.dart" 2>/dev/null | head -15
-
-# Check for verbose error messages
-grep -rn "print\|debugPrint\|console.log" lib/ --include="*.dart" 2>/dev/null | head -20
-
-# Check ProGuard/R8 configuration (Android)
-cat android/app/build.gradle 2>/dev/null | grep -A10 "proguard"
+if [ "$_FRAMEWORK" = "Flutter" ]; then
+  grep -rn "kDebugMode\|kReleaseMode\|debugPrint\|print(" lib/ --include="*.dart" 2>/dev/null | head -20
+fi
+if [ "$_FRAMEWORK" = "Expo" ] || [ "$_FRAMEWORK" = "React Native" ]; then
+  grep -rn "console\.log\|console\.error\|__DEV__" src/ --include="*.ts" --include="*.tsx" 2>/dev/null | head -20
+fi
+if [ "$_IS_IOS" = "1" ]; then
+  grep -rn "print(\|NSLog(\|os_log" ios/ --include="*.swift" 2>/dev/null | head -15
+fi
+if [ "$_IS_ANDROID" = "1" ]; then
+  grep -rn "Log\.\(d\|e\|w\|i\|v\)\|println" android/ --include="*.kt" 2>/dev/null | head -15
+  grep -rn "minifyEnabled\|proguardFiles" \
+    android/app/build.gradle android/app/build.gradle.kts 2>/dev/null | grep -v "//"
+  # FLAG_IMMUTABLE on PendingIntent — required Android 12+ (API 31), security vulnerability without it
+  grep -rn "PendingIntent\." android/ --include="*.kt" 2>/dev/null | \
+    grep -v "FLAG_IMMUTABLE\|FLAG_MUTABLE" | head -10 \
+    && echo "  CRITICAL: PendingIntent without FLAG_IMMUTABLE — required on Android 12+ (targetSdk 31+)"
+fi
 ```
 
 ---

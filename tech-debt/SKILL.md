@@ -43,12 +43,14 @@ technical debt that compounds over time and provides a prioritized removal plan.
 ```bash
 # Detect framework
 if [ -f "pubspec.yaml" ]; then
-  grep -q "flutter:" pubspec.yaml && _FRAMEWORK="Flutter" || _FRAMEWORK="Expo"
+  _FRAMEWORK="Flutter"
+elif [ -f "package.json" ] && grep -q '"expo"' package.json 2>/dev/null; then
+  _FRAMEWORK="Expo"
 elif [ -f "package.json" ]; then
   _FRAMEWORK="React Native"
-elif [ -d "ios" ] && [ -f "ios/Runner.xcodeproj/project.pbxproj" ]; then
+elif find . -maxdepth 1 -name "*.xcodeproj" -type d 2>/dev/null | grep -q .; then
   _FRAMEWORK="Swift"
-elif [ -d "android" ] && [ -f "android/app/build.gradle" ]; then
+elif [ -f "app/build.gradle" ] || [ -f "app/build.gradle.kts" ]; then
   _FRAMEWORK="Kotlin"
 else
   _FRAMEWORK="unknown"
@@ -66,16 +68,16 @@ fi
 ## Step 1: Static analysis (flutter analyze)
 
 ```bash
-# Run Flutter analyzer
-flutter analyze --no-pub 2>&1 | head -50
-
-# Get error/warning counts
-_ERRORS=$(flutter analyze --no-pub 2>&1 | grep -c "error •" || echo "0")
-_WARNINGS=$(flutter analyze --no-pub 2>&1 | grep -c "warning •" || echo "0")
-echo "Errors: $_ERRORS, Warnings: $_WARNINGS"
-
-# Sort by frequency
-flutter analyze --no-pub 2>&1 | sort | uniq -c | sort -rn | head -20
+if [ "$_FRAMEWORK" = "Flutter" ]; then
+  _ANALYSIS=$(flutter analyze --no-pub 2>&1)
+  echo "$_ANALYSIS" | head -50
+  _ERRORS=$(echo "$_ANALYSIS" | grep -c "error •" || echo "0")
+  _WARNINGS=$(echo "$_ANALYSIS" | grep -c "warning •" || echo "0")
+  echo "Errors: $_ERRORS, Warnings: $_WARNINGS"
+  echo "$_ANALYSIS" | sort | uniq -c | sort -rn | head -20
+else
+  echo "flutter analyze: not applicable for $_FRAMEWORK — use Xcode Analyze (iOS) or Android Lint (Android)"
+fi
 ```
 
 **Target:** 0 errors, warnings < 10.
@@ -105,22 +107,130 @@ grep -rn "Provider\|FutureProvider\|StreamProvider" lib/ --include="*.dart" 2>/d
 - `TextTheme.headline` → use `TextTheme.displayLarge` etc.
 - `Scaffold.showSnackBar` → use `ScaffoldMessenger.of(context).showSnackBar`
 
-### Swift deprecated APIs
+### Swift deprecated APIs and modernization debt
 
 ```bash
-# Check for deprecated iOS APIs
-grep -rn "UIWebView\|UILabelFont\|initWithFrame:" ios/ --include="*.swift" 2>/dev/null | head -10
+# UIKit → SwiftUI migration debt
+grep -rn "UIViewController\|UITableView\|UICollectionView\|UINavigationController\|UITabBarController" \
+  ios/ --include="*.swift" 2>/dev/null | grep -v "Representable\|Hosting" | wc -l | xargs echo "UIKit screens not yet migrated:"
 
-# Check for deprecated Swift patterns
-grep -rn "@objc\|UIStackView.distribution\|UITableViewStyle.plain" ios/ --include="*.swift" 2>/dev/null | head -10
+# Deprecated NavigationView → NavigationStack (iOS 16+)
+grep -rn "NavigationView\b" ios/ --include="*.swift" 2>/dev/null | head -10
+
+# Deprecated ObservableObject → @Observable macro (iOS 17+)
+grep -rn "ObservableObject\|@Published\|@StateObject\|@ObservedObject" \
+  ios/ --include="*.swift" 2>/dev/null | head -20
+
+# Combine → Swift Concurrency debt (async/await preferred for new code)
+grep -rn "\.sink(\|\.assign(\|AnyCancellable\|PassthroughSubject\|CurrentValueSubject" \
+  ios/ --include="*.swift" 2>/dev/null | head -20
+
+# CoreData → SwiftData migration candidates (iOS 17+)
+grep -rn "NSManagedObject\|NSFetchRequest\|NSPersistentContainer\|@NSManaged" \
+  ios/ --include="*.swift" 2>/dev/null | head -15
+
+# Deprecated UIWebView (auto-reject by App Store)
+grep -rn "UIWebView\|WebView" ios/ --include="*.swift" 2>/dev/null | head -5
+
+# @objc bridging overhead (performance + maintenance debt)
+grep -rn "^@objc\b\|@objc func\|@objcMembers" ios/ --include="*.swift" 2>/dev/null | head -15
+
+# State management: check for TCA, vanilla ObservableObject patterns
+grep -rn "ComposableArchitecture\|TCAFeature\|@Reducer\|Store<\|WithViewStore" \
+  ios/ --include="*.swift" 2>/dev/null | head -5 \
+  && echo "TCA detected" || echo "No TCA — check if ObservableObject pattern is consistent"
 ```
 
-### Kotlin deprecated APIs
+**Common Swift modernization targets:**
+- `NavigationView` → `NavigationStack` / `NavigationSplitView` (iOS 16+, avoids double-column bugs)
+- `@Published` + `ObservableObject` → `@Observable` macro (iOS 17+, fewer redraws)
+- `Combine` pipelines for simple async → `async/await` with `AsyncStream` or `AsyncSequence`
+- `CoreData` → `SwiftData` for new models on iOS 17+ targets
+- State management: TCA for complex flows, `@Observable` + `@State` for simple screens
+
+### Kotlin deprecated APIs and modernization debt
 
 ```bash
-# Check for deprecated Android APIs
-grep -rn "setVisibility(View.GONE)\|View.VISIBLE\|findViewById<" android/ --include="*.kt" 2>/dev/null | head -10
+# XML layouts → Jetpack Compose migration debt
+find android/ -name "*.xml" -path "*/layout/*" 2>/dev/null | wc -l | xargs echo "XML layout files (Compose migration candidates):"
+grep -rn "setContentView\|inflate\|LayoutInflater\|ViewBinding\|DataBinding" \
+  android/ --include="*.kt" 2>/dev/null | head -20
+
+# LiveData → StateFlow/SharedFlow migration debt (modern coroutine-based)
+grep -rn "LiveData\|MutableLiveData\|observe(\|observeAsState()" \
+  android/ --include="*.kt" 2>/dev/null | head -20
+
+# Deprecated ViewModel patterns
+grep -rn "ViewModelProvider\|viewModelScope\|lifecycleScope" \
+  android/ --include="*.kt" 2>/dev/null | head -10
+
+# Dagger → Hilt migration (Hilt is the recommended DI since 2020)
+grep -rn "@Component\|@Module\|@Inject\|DaggerAppComponent\|AppComponent" \
+  android/ --include="*.kt" 2>/dev/null | grep -v "@HiltAndroidApp\|@HiltViewModel\|@Inject" | head -15
+
+# SharedPreferences → DataStore migration (SharedPreferences not safe for coroutines)
+grep -rn "SharedPreferences\|getSharedPreferences\|PreferenceManager" \
+  android/ --include="*.kt" 2>/dev/null | head -15
+
+# Legacy threading: Handler, AsyncTask (removed API 30+), Thread
+grep -rn "AsyncTask\|Handler()\|Looper.getMainLooper\|Thread {" \
+  android/ --include="*.kt" 2>/dev/null | head -15
+
+# findViewById (View Binding / Compose should replace all)
+grep -rn "findViewById<" android/ --include="*.kt" 2>/dev/null | head -10
+
+# Jetpack Navigation: FragmentManager → NavController
+grep -rn "getSupportFragmentManager\|beginTransaction\|FragmentTransaction" \
+  android/ --include="*.kt" 2>/dev/null | head -10
 ```
+
+**Common Kotlin modernization targets:**
+- `LiveData` → `StateFlow` + `collectAsStateWithLifecycle()` (Compose-safe, lifecycle-aware)
+- `SharedPreferences` → `DataStore<Preferences>` (coroutine-safe, no ANR risk)
+- Dagger → Hilt (less boilerplate, first-class ViewModel integration via `@HiltViewModel`)
+- `AsyncTask` (removed) / `Handler` → Kotlin coroutines with `Dispatchers.Main`
+- XML layouts → Jetpack Compose (incremental: `ComposeView` in fragments as bridge)
+- `Room` + `LiveData` → `Room` + `Flow` (reactive queries without LiveData overhead)
+- WorkManager for background: check for raw `Service` / `IntentService` (deprecated)
+
+### Expo / React Native deprecated APIs and modernization debt
+
+```bash
+if [ "$_FRAMEWORK" = "Expo" ] || [ "$_FRAMEWORK" = "React Native" ]; then
+  # React Navigation: v5 patterns deprecated in v6+
+  grep -rn "NavigationContainer\|useNavigation\|createStackNavigator" \
+    src/ --include="*.tsx" --include="*.ts" 2>/dev/null | head -10
+  grep -rn "createStackNavigator\b" src/ --include="*.tsx" --include="*.ts" 2>/dev/null | head -5 \
+    && echo "  WARN: createStackNavigator (v5) → createNativeStackNavigator (v6+) for native feel"
+
+  # Reanimated 1 (incompatible with Fabric/New Architecture)
+  grep -rn "Animated\.Value\|Animated\.event\b" \
+    src/ --include="*.tsx" --include="*.ts" 2>/dev/null | head -10 \
+    && echo "  WARN: Animated API (v1 style) → Reanimated 2+ useSharedValue/useAnimatedStyle"
+
+  # AsyncStorage direct from react-native (removed, use @react-native-async-storage)
+  grep -rn "from 'react-native'.*AsyncStorage\|AsyncStorage.*from 'react-native'" \
+    src/ --include="*.ts" --include="*.tsx" 2>/dev/null | head -5 \
+    && echo "  CRITICAL: AsyncStorage removed from react-native core — use @react-native-async-storage/async-storage"
+
+  # Expo SDK: check for deprecated modules
+  grep -rn "expo-permissions\|Permissions\.askAsync" \
+    src/ --include="*.ts" --include="*.tsx" 2>/dev/null | head -5 \
+    && echo "  CRITICAL: expo-permissions removed in SDK 46 — use module-specific permission hooks"
+
+  # FlatList missing keyExtractor (performance debt)
+  grep -rn "<FlatList" src/ --include="*.tsx" 2>/dev/null \
+    | grep -v "keyExtractor" | head -10 \
+    && echo "  WARN: FlatList without keyExtractor — add for stable list rendering"
+fi
+```
+
+**Common Expo/React Native modernization targets:**
+- `createStackNavigator` → `createNativeStackNavigator` (React Navigation 6+, uses native UINavigationController/Fragment)
+- `Animated.Value` → Reanimated 2 `useSharedValue` (runs on UI thread, no JS bridge)
+- `AsyncStorage` from `react-native` → `@react-native-async-storage/async-storage`
+- `expo-permissions` → module-specific hooks (`useCameraPermissions`, `useMediaLibraryPermissions`)
+- Class components → functional components with hooks
 
 ---
 
@@ -172,11 +282,13 @@ grep -rn "setState(" lib/ --include="*.dart" 2>/dev/null | head -20
 ### Flutter dependencies
 
 ```bash
-# Check for outdated dependencies
-flutter pub outdated --mode=null-safety 2>&1 | head -30
+if [ "$_FRAMEWORK" = "Flutter" ]; then
+  # Check for outdated dependencies
+  flutter pub outdated 2>&1 | head -30
 
-# Check for dependency freshness
-flutter pub deps --style=tree 2>&1 | head -20
+  # Check for dependency freshness
+  flutter pub deps --style=tree 2>&1 | head -20
+fi
 ```
 
 **Target:** All dependencies up-to-date or pinned to known-good versions.
@@ -191,6 +303,22 @@ cat ios/Podfile 2>/dev/null | head -30
 cat ios/Package.swift 2>/dev/null | head -30
 ```
 
+### Expo / React Native dependencies
+
+```bash
+if [ "$_FRAMEWORK" = "Expo" ]; then
+  # expo-doctor catches SDK version mismatches, incompatible packages, config issues
+  which npx 2>/dev/null && npx expo-doctor 2>&1 | head -40 \
+    || echo "npx not found — run: npx expo-doctor"
+
+  # Check for outdated packages
+  npx expo install --check 2>&1 | head -20 \
+    || echo "Run: npx expo install --check to find incompatible package versions"
+elif [ "$_FRAMEWORK" = "React Native" ]; then
+  npm outdated 2>&1 | head -20 || yarn outdated 2>&1 | head -20 || true
+fi
+```
+
 ---
 
 ## Step 6: Code quality issues
@@ -198,9 +326,21 @@ cat ios/Package.swift 2>/dev/null | head -30
 ### Hardcoded strings
 
 ```bash
-# Find hardcoded strings that should be localized
-grep -rn "'\"['\"]" lib/ --include="*.dart" 2>/dev/null | grep -v "const \|// " | head -30
-grep -rn "Text(\|" lib/ --include="*.dart" 2>/dev/null | grep -v "l10n\|intl" | head -20
+# Flutter: hardcoded strings in Text() widgets (not localized)
+if [ "$_FRAMEWORK" = "Flutter" ]; then
+  grep -rn 'Text("[^"]\+")' lib/ --include="*.dart" 2>/dev/null \
+    | grep -v "//\|l10n\|intl\|AppLocalizations\|S\.of" | head -20
+fi
+# Swift: hardcoded user-facing strings (not NSLocalizedString)
+if [ "$_IS_IOS" = "1" ]; then
+  grep -rn '"[A-Z][a-z]' ios/ --include="*.swift" 2>/dev/null \
+    | grep -v "//\|NSLocalizedString\|\.localized\b" | head -20
+fi
+# Kotlin: hardcoded user-facing strings (not getString/stringResource)
+if [ "$_IS_ANDROID" = "1" ]; then
+  grep -rn '"[A-Z][a-z]' android/ --include="*.kt" 2>/dev/null \
+    | grep -v "//\|getString\|stringResource\|R\.string" | head -20
+fi
 ```
 
 ### Missing const constructors

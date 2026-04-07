@@ -1569,3 +1569,152 @@ describe('sidebar agent (#584)', () => {
     expect(content).not.toContain("proc.stderr.on('data', () => {})");
   });
 });
+
+// --- Mobile skill validation ---
+
+const MOBILE_SKILL_DIRS = [
+  'hig-review',
+  'mobile-security',
+  'store-compliance',
+  'perf-audit',
+  'tech-debt',
+  'mobile-canary',
+];
+
+// Skills planned (referenced in routing table) but not yet built — CI tracks these as known gaps
+const MOBILE_SKILL_DIRS_PLANNED = [
+  'jank-removal',
+  'push-audit',
+  'analytics-audit',
+  'onboarding-audit',
+  'store-ship',
+  'mobile-retro',
+  'mobile-qa',
+];
+
+// All mobile skill names derived from frontmatter (for routing integrity check)
+const MOBILE_ROUTING_SKILLS = [
+  'jank-removal', 'store-compliance', 'push-audit', 'analytics-audit',
+  'onboarding-audit', 'hig-review', 'investigate', 'store-ship', 'perf-audit',
+  'mobile-security', 'tech-debt', 'mobile-retro', 'mobile-canary', 'app-store-optimization',
+];
+
+describe('Mobile skill frontmatter', () => {
+  for (const dir of MOBILE_SKILL_DIRS) {
+    const skillPath = path.join(ROOT, dir, 'SKILL.md');
+
+    test(`${dir}/SKILL.md exists`, () => {
+      expect(fs.existsSync(skillPath)).toBe(true);
+    });
+
+    test(`${dir}/SKILL.md starts with valid YAML frontmatter`, () => {
+      if (!fs.existsSync(skillPath)) return;
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      expect(content.startsWith('---\n')).toBe(true);
+      const closeIdx = content.indexOf('\n---', 4);
+      expect(closeIdx).toBeGreaterThan(4);
+    });
+
+    test(`${dir}/SKILL.md has name: field`, () => {
+      if (!fs.existsSync(skillPath)) return;
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      expect(content).toMatch(/^name:\s*\S/m);
+    });
+
+    test(`${dir}/SKILL.md has description: field`, () => {
+      if (!fs.existsSync(skillPath)) return;
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      expect(content).toMatch(/^description:/m);
+    });
+
+    test(`${dir}/SKILL.md name contains no special characters`, () => {
+      if (!fs.existsSync(skillPath)) return;
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      const nameMatch = content.match(/^name:\s*(.+)$/m);
+      expect(nameMatch).not.toBeNull();
+      // name must be letters, numbers, hyphens only
+      expect(nameMatch![1].trim()).toMatch(/^[a-z0-9-]+$/);
+    });
+
+    test(`${dir}/SKILL.md uses no $B browse commands (mobile skills must not use headless browser)`, () => {
+      if (!fs.existsSync(skillPath)) return;
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      // $B commands are web-only; mobile skills must not use them
+      const browseCommands = content.match(/\$B\s+(goto|snapshot|console|perf|text|links|click|type|scroll|find|wait)/g);
+      expect(browseCommands).toBeNull();
+    });
+
+    test(`${dir}/SKILL.md has preamble-tier: 4 (lightweight, no gstack preamble injection)`, () => {
+      if (!fs.existsSync(skillPath)) return;
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      expect(content).toContain('preamble-tier: 4');
+    });
+
+    test(`${dir}/SKILL.md has telemetry tail (gstack-timeline-log completed event)`, () => {
+      if (!fs.existsSync(skillPath)) return;
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      expect(content).toContain('gstack-timeline-log');
+      expect(content).toContain('"event":"completed"');
+    });
+  }
+});
+
+describe('Mobile routing table integrity', () => {
+  test('CLAUDE.md mobile routing table does not reference /canary (web-only)', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'CLAUDE.md'), 'utf-8');
+    const routingSection = content.slice(content.indexOf('## Mobile routing rules'));
+    const routingEnd = routingSection.indexOf('\n## ', 10);
+    const table = routingEnd > 0 ? routingSection.slice(0, routingEnd) : routingSection;
+    // /canary (web browser canary) must not appear — mobile uses /mobile-canary
+    expect(table).not.toContain('`/canary`');
+  });
+
+  test('CLAUDE.md mobile routing table does not reference /aso (wrong name)', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'CLAUDE.md'), 'utf-8');
+    const routingSection = content.slice(content.indexOf('## Mobile routing rules'));
+    const routingEnd = routingSection.indexOf('\n## ', 10);
+    const table = routingEnd > 0 ? routingSection.slice(0, routingEnd) : routingSection;
+    // /aso is not a real installed skill — routing must use /app-store-optimization
+    expect(table).not.toContain('`/aso`');
+    expect(table).toContain('app-store-optimization');
+  });
+
+  test('all skills referenced in mobile routing table exist as dirs OR are gstack core skills', () => {
+    const gstackCoreSkills = new Set([
+      'investigate', 'app-store-optimization', 'canary', 'retro', 'ship', 'review',
+    ]);
+    const missing: string[] = [];
+    for (const skill of MOBILE_ROUTING_SKILLS) {
+      if (gstackCoreSkills.has(skill)) continue;
+      if (!fs.existsSync(path.join(ROOT, skill))) {
+        missing.push(skill);
+      }
+    }
+    if (missing.length > 0) {
+      // Report as pending (known gaps from planned skills) rather than hard fail
+      console.warn(`MOBILE ROUTING GAPS (skills referenced but not yet built): ${missing.join(', ')}`);
+    }
+    // Hard fail only on skills that exist in our repo but are broken, not planned gaps
+    const brokenExisting = missing.filter(s => !MOBILE_SKILL_DIRS_PLANNED.includes(s));
+    expect(brokenExisting).toEqual([]);
+  });
+
+  test('mobile routing table references /mobile-canary not /canary', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'CLAUDE.md'), 'utf-8');
+    expect(content).toContain('/mobile-canary');
+  });
+});
+
+describe('Mobile setup skip-list consistency', () => {
+  test('setup skip-list includes all mobile skill dirs (3 locations)', () => {
+    const setupContent = fs.readFileSync(path.join(ROOT, 'setup'), 'utf-8');
+    const allMobileDirs = [...MOBILE_SKILL_DIRS, ...MOBILE_SKILL_DIRS_PLANNED];
+
+    // Count occurrences of each skill in the skip-list
+    // setup has 3 identical skip-list locations
+    for (const dir of allMobileDirs) {
+      const occurrences = (setupContent.match(new RegExp(`\\b${dir}\\b`, 'g')) || []).length;
+      expect(occurrences).toBeGreaterThanOrEqual(3);
+    }
+  });
+});
