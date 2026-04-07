@@ -1,145 +1,223 @@
 ---
 name: push-audit
-description: Push notification audit for mobile apps — review notification implementation, permissions, payloads, delivery, and opt-out handling for iOS and Android.
+preamble-tier: 4
+version: 1.0.0
+description: |
+  Push notification implementation audit. Checks permission timing, payload content,
+  frequency caps, opt-out handling, rich notification support, and platform compliance.
+  Run AFTER /analytics-audit if push notifications were added, or standalone when
+  investigating notification issues. (gstack-mobile)
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Grep
+  - AskUserQuestion
+---
+<!-- gstack-mobile: push-audit/SKILL.md -->
+
+## Preamble (run first)
+
+```bash
+_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+_MOBILE_PLATFORM=$(~/.claude/skills/gstack/bin/gstack-config get mobile_platform 2>/dev/null || echo "unknown")
+_TEL_START=$(date +%s)
+_SESSION_ID="$$-$(date +%s)"
+echo "BRANCH: $_BRANCH"
+echo "MOBILE_PLATFORM: $_MOBILE_PLATFORM"
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"push-audit","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
+```
+
 ---
 
 # /push-audit
 
-Run this when implementing or changing push notifications. This skill reviews notification implementation to ensure messages are timely, relevant, and comply with platform guidelines and user expectations.
+Push is the most powerful retention tool in mobile — and the fastest way to lose users
+if done wrong. This audit catches the things that cause opt-outs, low delivery, or
+App Store rejection.
 
-## Use when
+---
 
-- Adding push notifications for the first time.
-- Changing notification content, triggers, or frequency.
-- Investigating low delivery rates or high opt-out rates.
-- Implementing notification categories or actions.
-- Setting up rich notifications (images, actions, breakpoints).
-- Reviewing a PR for notification implementation quality.
-- Preparing for store submission with notification features.
+## Step 0: Identify push implementation
 
-## Inputs
+```bash
+# Find push notification code
+grep -r "push\|notification\|FCM\|APNs\|messaging\|OneSignal" \
+  lib/ src/ --include="*.dart" --include="*.tsx" --include="*.swift" --include="*.kt" -l 2>/dev/null | head -10
 
-Collect or infer:
+# Flutter packages
+cat pubspec.yaml 2>/dev/null | grep -E "firebase_messaging|flutter_local_notifications|onesignal" | head -5
 
-- Platform: `flutter`, `swift`, `kotlin`, or `expo`.
-- Target OS: iOS, Android, or both.
-- What changed: diff, PR, or feature description.
-- Push provider: Firebase Cloud Messaging, APNs directly, or a third-party service.
-- Notification types: transactional, promotional, breaking news, etc.
-- Current opt-out rate: if known.
+# iOS capabilities
+grep -r "Push Notifications\|Remote notifications" ios/ --include="*.plist" --include="*.entitlements" 2>/dev/null | head -5
+```
 
-If platform is missing:
-- Read `~/.gstack/config` or project docs.
-- If still unclear, ask one concise question before proceeding.
+Identify:
+- Push provider (Firebase FCM, OneSignal, raw APNs, etc.)
+- Notification types (transactional, marketing, news)
+- Current opt-out rate if known
 
-## Review standard
+---
 
-### 1. Permission handling
-- Request permission at point of user action, not on first launch.
-- Provide clear explanation of why notifications are useful before asking.
-- Handle permission denied gracefully (no degraded experience).
-- Re-request permission after significant value is demonstrated (if allowed).
-- No repetitive permission requests that annoy users.
+## Step 1: Permission timing
 
-### 2. Notification content
-- Title is concise and meaningful (50 characters max).
-- Body provides useful information, not just "tap to open."
-- No sensitive data in notification content (PII, credentials).
-- Notification doesn't reveal private info on the lock screen.
-- Images and media are appropriate and don't bloat payload.
-- Rich notifications have fallbacks for devices that don't support them.
+The #1 push mistake: asking for notification permission on first launch.
 
-### 3. Timing and frequency
-- No notifications during quiet hours (unless critical).
-- Batch notifications when possible to avoid spam.
-- Respect system notification limits (Android, iOS both have limits).
-- Time zone aware for global apps.
-- No notifications that fire repeatedly in a loop.
+```bash
+# Find permission request in app
+grep -r "requestPermission\|requestAuthorization\|registerForRemoteNotifications" \
+  lib/ src/ --include="*.dart" --include="*.tsx" --include="*.swift" --include="*.kt" -l 2>/dev/null | head -5
 
-### 4. Delivery and reliability
-- Use FCM/APNs correctly (proper token handling, refresh on re-install).
-- Handle token migration between app versions.
-- Implement fallback for when push fails (in-app notifications).
-- Test on real devices, not just emulators.
-- Verify delivery in production (don't assume sent = delivered).
+# Find where it's called (in which screen/on what trigger)
+grep -r -B5 "requestPermission\|requestAuthorization" \
+  lib/ src/ --include="*.dart" --include="*.tsx" --include="*.swift" --include="*.kt" 2>/dev/null | head -20
+```
 
-### 5. Interaction and actions
-- Deep links from notification to relevant content.
-- Notification actions are useful and don't require extra steps.
-- Swipe actions work correctly.
-- Unread count/badge updates are consistent.
-- Opening notification clears the notification (or doesn't if desired).
+Check:
+- [ ] Permission is NOT requested on first launch. EVER.
+- [ ] Permission is requested AFTER user demonstrates intent:
+  - After completing onboarding (step 3+)
+  - After first purchase
+  - After first meaningful action
+  - After 2-3 sessions of active use
+- [ ] Pre-prompt: in-app explanation shown BEFORE system dialog ("We'll notify you when...")
 
-### 6. Opt-out and unsubscribe
-- Unsubscribe link or setting is easy to find.
-- Unsubscribing works immediately, not after a delay.
-- One-click unsubscribe in email (if email is also used).
-- No deceptive unsubscribe patterns (hidden buttons, extra steps).
-- Opt-out is respected immediately across all channels.
+---
 
-### 7. Privacy and data
-- No sensitive data in notification payload.
-- Notification data doesn't get logged in analytics unless needed.
-- Device tokens stored securely, not in plain text or logs.
-- No use of notification for tracking without consent.
+## Step 2: Notification content
 
-### 8. Platform specifics
-- iOS: critical alerts configured for actual emergencies only, notification categories for customization.
-- Android: notification channels configured (Oreo+), importance levels correct, badging handled.
-- Both: test on both platforms, behavior differs.
+Check payload and message content:
 
-## Output format
+```bash
+# Find notification handling code
+grep -r "notification\|RemoteMessage\|UNNotification" \
+  lib/ src/ --include="*.dart" --include="*.tsx" --include="*.swift" -l 2>/dev/null | head -10
 
-Use this exact structure:
+# Find notification content templates (title, body)
+grep -r "title.*notification\|body.*notification\|content-title\|mutable-content" \
+  lib/ src/ --include="*.dart" --include="*.tsx" -r . 2>/dev/null | head -20
+```
 
-### Verdict
-One paragraph with a blunt recommendation:
-- `PASS`
-- `PASS WITH WARNINGS`
-- `FAIL`
+**Requirements:**
+- Title: < 50 characters, meaningful without body
+- Body: < 100 characters (truncated on lock screen)
+- No PII in notification content (not "Your order is ready, John")
+- No sensitive data visible on lock screen
+- Images: optional, must be appropriate size (<1MB)
+- Actions: optional, must be meaningful
 
-### Critical issues
-Bullets only. Include only issues that will cause rejections or user trust issues.
+---
 
-### Warnings
-Bullets only. Important but non-blocking.
+## Step 3: Frequency and throttling
 
-### Platform-specific notes
-Split into:
-- `iOS`
-- `Android`
-- `Flutter / shared`
-Only include sections that apply.
+Check for frequency limits:
 
-### Recommended fix
-Give the most opinionated path to improve the implementation.
+```bash
+# Find notification triggers
+grep -r "schedule\|deliver\|throttle\|rate.*limit\|batch" \
+  lib/ src/ --include="*.dart" --include="*.tsx" --include="*.swift" --include="*.kt" -r . 2>/dev/null | head -10
+```
 
-### Build checklist
-Provide a short, execution-ready checklist.
+**Rules:**
+- No more than 3-5 notifications per user per day (including all types)
+- No notifications during quiet hours (typically 9pm - 7am local time)
+- Batch multiple events instead of individual notifications
+- No repetitive notifications (same message every X minutes)
 
-## Style
+---
 
-- Be direct and specific.
-- Focus on permission timing, content quality, and opt-out experience.
-- Flag anything that could feel spammy or deceptive.
-- Don't suggest anything that violates platform guidelines.
-- Consider the user's perspective — would they feel good about this notification?
+## Step 4: Opt-out handling
 
-## Mobile-specific checks
+Check that opt-out works correctly:
 
-- Request permission at the right time (after value, not at launch).
-- Notification center doesn't fill with junk.
-- Lock screen doesn't reveal sensitive info.
-- Tapping notification goes to the right place.
-- Unsubscribing is trivial.
+```bash
+# Find unsubscribe/notification settings
+grep -r "unsubscribe\|opt.*out\|notification.*setting\|channel.*disable" \
+  lib/ src/ --include="*.dart" --include="*.tsx" --include="*.swift" --include="*.kt" -r . 2>/dev/null | head -10
+```
 
-## Examples
+- [ ] Unsubscribe link available in every notification (or in-app settings)
+- [ ] Unsubscribing works immediately — not "will take 24 hours"
+- [ ] Can re-enable notifications in app settings (opt-in is allowed)
+- [ ] No deceptive unsubscribe patterns (hidden button, extra steps)
 
-Good prompts:
-- `/push-audit review this push notification implementation for permission handling`
-- `/push-audit check if this notification content is appropriate for lock screen`
-- `/push-audit audit the notification frequency to prevent opt-outs`
+---
 
-Bad prompts:
-- `/push-audit add push notifications`
-- `/push-audit improve notifications`
+## Step 5: Rich notifications and actions
+
+If implemented:
+
+```bash
+# Find action buttons
+grep -r "action\|category\|UNNotificationCategory\|NotificationChannel" \
+  lib/ src/ --include="*.dart" --include="*.swift" --include="*.kt" -r . 2>/dev/null | head -10
+
+# Find image/carousel support
+grep -r "image\|attachment\|carousel\|breakpoint" \
+  lib/ src/ --include="*.dart" --include="*.tsx" -r . 2>/dev/null | head -10
+```
+
+- [ ] Action buttons are useful, not just "Dismiss"
+- [ ] Deep links from notifications go to the right screen
+- [ ] Rich notifications (images, actions) have fallbacks for devices that don't support them
+- [ ] Interactive notifications respect system limits
+
+---
+
+## Step 6: Platform-specific checks
+
+**iOS:**
+- [ ] Uses `UNUserNotificationCenter` for iOS 10+
+- [ ] Handles `willPresent` for foreground notifications
+- [ ] Critical alerts used only for actual emergencies (spamming = rejection)
+- [ ] Notification categories registered for actionable notifications
+
+**Android:**
+- [ ] Uses `NotificationChannel` (Oreo+)
+- [ ] Importance level appropriate (high for important, default for normal)
+- [ ] Badging handled correctly
+- [ ] Custom sound respects Do Not Disturb
+
+**Flutter:**
+- [ ] Uses `flutter_local_notifications` or `firebase_messaging`
+- [ ] Handles `onMessage`, `onLaunch`, `onBackgroundMessage` correctly
+- [ ] Notification permissions requested at right time (not on launch)
+
+---
+
+## Step 7: Output format
+
+PUSH AUDIT
+═══════════════════════════════════════════════════════════
+Provider: {Firebase/OneSignal/APNs/other}
+Permission timing: CORRECT / FIRST_LAUNCH / UNKNOWN
+Daily volume: {N} notifications/day per user
+
+Content:
+- Title length: OK / TOO LONG (>50 chars)
+- Body length: OK / TOO LONG (>100 chars)
+- PII present: YES / NO
+- Lock screen safe: YES / NO
+
+Frequency:
+- Daily cap: OBSERVED / NOT SET
+- Quiet hours: RESPECTED / IGNORED
+
+Opt-out: WORKING / NOT IMPLEMENTED / HARMFUL
+
+Platform compliance: PASS / FAIL
+
+VERDICT: PASS / FAIL
+═══════════════════════════════════════════════════════════
+
+If VERDICT is FAIL, fix before `/store-ship`.
+
+---
+
+## Step 8: Completion
+
+```bash
+_TEL_END=$(date +%s)
+_TEL_DUR=$(( _TEL_END - _TEL_START ))
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"push-audit","event":"completed","branch":"'"$(git branch --show-current 2>/dev/null || echo unknown)"'","outcome":"OUTCOME","duration_s":"'"$_TEL_DUR"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null || true
+```
