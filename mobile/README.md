@@ -46,10 +46,10 @@ Copy from `mobile/.env.example` and fill in your credentials.
 /store-ship
   → App Store / Play submission, build management
 
-/canary
-  → Post-deploy monitoring, crash tracking
+/mobile-canary
+  → Post-deploy crash monitoring, ANR rate, store rating delta
 
-/aso
+/app-store-optimization
   → App store optimization, keyword research
 
 /mobile-retro
@@ -63,15 +63,16 @@ mobile/
   README.md           ← This file
   .env.example         ← Secrets template
 
-hig-review/            ← Pre-build UI review
-mobile-security/      ← Security audit
-mobile-qa/            ← Testing guidance
-analytics-audit/      ← Tracking review
-onboarding-audit/     ← Activation review
-store-ship/           ← Store submission
-jank-removal/         ← Performance tuning
-push-audit/           ← Notification audit
-mobile-retro/         ← Ship retrospective
+hig-review/            ← Pre-build UI review (refs mobile-ios-design, flutter-adaptive-ui, building-native-ui)
+mobile-security/      ← Security audit (extends /cso with OWASP Mobile Top 10)
+mobile-qa/            ← Device testing, accessibility audit (replaces web /qa)
+analytics-audit/      ← Event schema, funnel coverage
+onboarding-audit/     ← Activation audit (refs user-onboarding for redesign)
+store-ship/           ← Store submission (delegates to asc-release-flow, expo-deployment)
+jank-removal/         ← Frame drop diagnosis (refs flutter-animations for fixes)
+push-audit/           ← APNs/FCM delivery + permission UX
+mobile-retro/         ← Ship retro (extends /retro with crash rate, store reviews)
+mobile-canary/        ← Post-deploy crash monitoring (replaces web /canary for mobile)
 ```
 
 ## Quick start

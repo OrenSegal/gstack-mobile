@@ -456,8 +456,8 @@ When working on mobile projects (Flutter/Expo/Swift/Kotlin), use these skills:
 | Security review, credentials in code | `/mobile-security` |
 | Technical debt, deprecated APIs, dead code | `/tech-debt` |
 | Weekly retro with crash rate, store reviews | `/mobile-retro` |
-| Post-deploy mobile monitoring | `/canary` |
-| App Store Optimization audit | `/aso` |
+| Post-deploy mobile monitoring | `/mobile-canary` |
+| App Store Optimization audit | `/app-store-optimization` |
 
 **Note:** The `/qa` skill relies on headless browser which doesn't apply to mobile.
 Use device testing or Maestro/Appium for mobile QA instead.

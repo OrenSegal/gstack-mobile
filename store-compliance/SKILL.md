@@ -54,11 +54,15 @@ echo "iOS: $_IS_IOS, Android: $_IS_ANDROID"
 
 # Detect framework
 if [ -f "pubspec.yaml" ]; then
-  grep -q "flutter:" pubspec.yaml && _FRAMEWORK="Flutter" || _FRAMEWORK="Expo"
+  _FRAMEWORK="Flutter"
+elif [ -f "package.json" ] && grep -q '"expo"' package.json 2>/dev/null; then
+  _FRAMEWORK="Expo"
 elif [ -f "package.json" ]; then
   _FRAMEWORK="React Native"
-elif [ -d "ios" ] && [ -f "ios/Runner.xcodeproj/project.pbxproj" ]; then
+elif find . -maxdepth 1 -name "*.xcodeproj" -type d 2>/dev/null | grep -q .; then
   _FRAMEWORK="Swift"
+elif [ -f "app/build.gradle" ] || [ -f "app/build.gradle.kts" ]; then
+  _FRAMEWORK="Kotlin"
 else
   _FRAMEWORK="unknown"
 fi
@@ -72,53 +76,144 @@ echo "Framework: $_FRAMEWORK"
 ### 1a. Privacy descriptions (required for iOS 17+)
 
 ```bash
-# Check for PrivacyInfo.xcprivacy (iOS 17+ required)
+# PrivacyInfo.xcprivacy — required for iOS 17+ submissions
 find . -name "PrivacyInfo.xcprivacy" 2>/dev/null | head -5
-[ -z "$(find . -name "PrivacyInfo.xcprivacy" 2>/dev/null)" ] && echo "WARN: No PrivacyInfo.xcprivacy — required for iOS 17+"
+[ -z "$(find . -name "PrivacyInfo.xcprivacy" 2>/dev/null)" ] && echo "CRITICAL: No PrivacyInfo.xcprivacy — required for iOS 17+"
 
-# Check Info.plist for usage descriptions
-grep -r "NS.*UsageDescription\|NS.*UsageString" ios/ --include="*.plist" 2>/dev/null | head -20
+# If PrivacyInfo.xcprivacy exists, check for required-reason API declarations
+if [ -f "$(find . -name "PrivacyInfo.xcprivacy" 2>/dev/null | head -1)" ]; then
+  cat "$(find . -name "PrivacyInfo.xcprivacy" 2>/dev/null | head -1)"
+fi
+
+# Required-reason APIs — if any of these are used, PrivacyInfo must declare why
+echo "Checking for required-reason API usage:"
+grep -rn "UserDefaults\|NSUserDefaults" ios/ --include="*.swift" 2>/dev/null | head -3 \
+  && echo "  → NSPrivacyAccessedAPICategoryUserDefaults required"
+grep -rn "NSFileSystemFreeSize\|NSFileSystemSize\|volumeAvailableCapacity" \
+  ios/ --include="*.swift" 2>/dev/null | head -3 \
+  && echo "  → NSPrivacyAccessedAPICategoryDiskSpace required"
+grep -rn "\.bootTime\|systemUptime\|mach_absolute_time\|clock_gettime" \
+  ios/ --include="*.swift" ios/ --include="*.m" 2>/dev/null | head -3 \
+  && echo "  → NSPrivacyAccessedAPICategorySystemBootTime required"
+
+# Info.plist usage descriptions
+grep -r "NS.*UsageDescription" ios/ --include="*.plist" 2>/dev/null | head -20
 ```
 
-**Required descriptions** (add to Info.plist if missing):
-- NSCameraUsageDescription — "This app uses the camera to [feature]"
-- NSMicrophoneUsageDescription — "This app uses the microphone for [feature]"
-- NSPhotoLibraryUsageDescription — "This app accesses your photos to [feature]"
-- NSPhotoLibraryAddUsageDescription — "This app saves photos to your library"
-- NSLocationWhenInUseUsageDescription — "This app uses your location to [feature]"
-- NSLocationAlwaysAndWhenInUseUsageDescription — "This app needs background location for [feature]"
-- NSContactsUsageDescription — "This app accesses your contacts to [feature]"
-- NSCalendarsUsageDescription — "This app accesses your calendar to [feature]"
-- NSUserTrackingUsageDescription — "This app uses advertising tracking" (if IDFA used)
+**Required Info.plist descriptions** (auto-reject if using API without description):
+- `NSCameraUsageDescription`, `NSMicrophoneUsageDescription`, `NSPhotoLibraryUsageDescription`
+- `NSLocationWhenInUseUsageDescription`, `NSContactsUsageDescription`, `NSCalendarsUsageDescription`
+- `NSUserTrackingUsageDescription` — required if using `ATTrackingManager.requestTrackingAuthorization`
+- `NSFaceIDUsageDescription` — required if using `LAContext.evaluatePolicy`
 
-Flag any missing descriptions as CRITICAL — auto-reject.
+### 1a-flutter. Flutter plugin → permission declaration cross-check
+
+```bash
+# Flutter plugins that require iOS permission strings in Info.plist
+if [ -f "pubspec.yaml" ]; then
+  echo "Flutter plugins detected — checking for required permission declarations:"
+  grep -q "camera\b" pubspec.yaml 2>/dev/null && \
+    { grep -q "NSCameraUsageDescription" ios/Runner/Info.plist 2>/dev/null || \
+      echo "  CRITICAL: camera plugin present but NSCameraUsageDescription missing"; }
+  grep -q "geolocator\|location\b" pubspec.yaml 2>/dev/null && \
+    { grep -q "NSLocationWhenInUseUsageDescription" ios/Runner/Info.plist 2>/dev/null || \
+      echo "  CRITICAL: location plugin present but NSLocationWhenInUseUsageDescription missing"; }
+  grep -q "image_picker\|photo_manager" pubspec.yaml 2>/dev/null && \
+    { grep -q "NSPhotoLibraryUsageDescription" ios/Runner/Info.plist 2>/dev/null || \
+      echo "  CRITICAL: image_picker/photo_manager present but NSPhotoLibraryUsageDescription missing"; }
+  grep -q "microphone\|record\b\|audio_record" pubspec.yaml 2>/dev/null && \
+    { grep -q "NSMicrophoneUsageDescription" ios/Runner/Info.plist 2>/dev/null || \
+      echo "  CRITICAL: audio plugin present but NSMicrophoneUsageDescription missing"; }
+  grep -q "contacts_service\|flutter_contacts" pubspec.yaml 2>/dev/null && \
+    { grep -q "NSContactsUsageDescription" ios/Runner/Info.plist 2>/dev/null || \
+      echo "  CRITICAL: contacts plugin present but NSContactsUsageDescription missing"; }
+fi
+```
+
+### 1a-flutter-android. Flutter plugin → Android manifest permission cross-check
+
+```bash
+if [ -f "pubspec.yaml" ] && [ -f "android/app/src/main/AndroidManifest.xml" ]; then
+  _MANIFEST="android/app/src/main/AndroidManifest.xml"
+  grep -q "camera\b" pubspec.yaml 2>/dev/null && \
+    { grep -q "CAMERA" "$_MANIFEST" 2>/dev/null || \
+      echo "  CRITICAL: camera plugin present but android.permission.CAMERA missing from manifest"; }
+  grep -q "geolocator\|location\b" pubspec.yaml 2>/dev/null && \
+    { grep -q "ACCESS_FINE_LOCATION\|ACCESS_COARSE_LOCATION" "$_MANIFEST" 2>/dev/null || \
+      echo "  CRITICAL: location plugin present but ACCESS_*_LOCATION missing from manifest"; }
+  grep -q "image_picker\|photo_manager" pubspec.yaml 2>/dev/null && \
+    { grep -q "READ_MEDIA_IMAGES\|READ_EXTERNAL_STORAGE" "$_MANIFEST" 2>/dev/null || \
+      echo "  CRITICAL: image_picker present but READ_MEDIA_IMAGES missing from manifest"; }
+  grep -q "microphone\|record\b\|audio_record" pubspec.yaml 2>/dev/null && \
+    { grep -q "RECORD_AUDIO" "$_MANIFEST" 2>/dev/null || \
+      echo "  CRITICAL: audio plugin present but RECORD_AUDIO missing from manifest"; }
+  grep -q "contacts_service\|flutter_contacts" pubspec.yaml 2>/dev/null && \
+    { grep -q "READ_CONTACTS" "$_MANIFEST" 2>/dev/null || \
+      echo "  CRITICAL: contacts plugin present but READ_CONTACTS missing from manifest"; }
+fi
+```
+
+### 1a-expo. Expo / React Native permission declarations
+
+```bash
+if [ "$_FRAMEWORK" = "Expo" ]; then
+  echo "Expo app.json / app.config.js permission checks:"
+
+  # iOS infoPlist permissions in app.json
+  _APP_JSON=$(cat app.json app.config.js 2>/dev/null | head -200)
+  echo "$_APP_JSON" | grep -q "NSCameraUsageDescription" \
+    || { grep -q "expo-camera\|expo-image-picker" package.json 2>/dev/null && \
+         echo "  CRITICAL: Camera plugin present but NSCameraUsageDescription missing from app.json expo.ios.infoPlist"; }
+  echo "$_APP_JSON" | grep -q "NSLocationWhenInUseUsageDescription" \
+    || { grep -q "expo-location" package.json 2>/dev/null && \
+         echo "  CRITICAL: expo-location present but NSLocationWhenInUseUsageDescription missing"; }
+  echo "$_APP_JSON" | grep -q "NSMicrophoneUsageDescription" \
+    || { grep -q "expo-av\|expo-audio" package.json 2>/dev/null && \
+         echo "  CRITICAL: Audio plugin present but NSMicrophoneUsageDescription missing"; }
+
+  # Android permissions array in app.json
+  echo "$_APP_JSON" | grep -q '"permissions"' \
+    || echo "  WARN: No expo.android.permissions declared in app.json — defaults may over-request"
+
+  # EAS build config
+  cat eas.json 2>/dev/null | head -20 \
+    || echo "  INFO: No eas.json — using Expo Go or local build"
+
+  # SDK version
+  grep '"sdkVersion"\|"expo":' app.json 2>/dev/null | head -3
+fi
+```
 
 ### 1b. Private API usage (auto-reject)
 
 ```bash
-# Check for banned APIs
-grep -rn "_UIApplication\|UIWebView\|LSApplicationWorkspace\|CLLocationManagerSignificantChange\|sendSynchronousRequest" \
+# Banned APIs — auto-reject
+grep -rn "UIWebView\|_UIApplication\|LSApplicationWorkspace\|sendSynchronousRequest\|UDID\|advertisingIdentifier" \
   lib/ ios/ --include="*.dart" --include="*.swift" --include="*.m" --include="*.plist" 2>/dev/null | head -20
+
+# Swift 6 strict concurrency — not a rejection but causes crashes Apple reviewers notice
+grep -rn "nonisolated(unsafe)\|@unchecked Sendable" ios/ --include="*.swift" 2>/dev/null | head -5
 ```
 
-**Banned APIs** (cause immediate rejection):
-- UIWebView — deprecated, use WKWebView
-- UDID — useidentifierforvendor
-- Private APIs starting with _
+**Banned APIs** (auto-reject):
+- `UIWebView` → use `WKWebView`
+- `UDID` / `advertisingIdentifier` without ATT consent → use `identifierForVendor`
+- Private APIs starting with `_` (Apple scans for symbol names in binary)
+- `sendSynchronousRequest` (blocks main thread + deprecated)
 
 Flag any found as CRITICAL.
 
 ### 1c. App icon and assets
 
 ```bash
-# Check icon sizes
-ls -la ios/Runner/Assets.xcassets/AppIcon.appiconset/ 2>/dev/null | head -10
-find . -name "AppIcon-*.png" -o -name "icon-*.png" 2>/dev/null | head -10
-
-# Check for alpha channel in icon
-file ios/Runner/Assets.xcassets/AppIcon.appiconset/*1024*.png 2>/dev/null | grep -v "PNG" | head -5 || echo "Icon format OK"
-
-# Check required icon sizes (iOS)
+# Locate app icon set — works for Flutter (Runner) and pure Swift (any .xcassets)
+_ICON_SET=$(find . -name "AppIcon.appiconset" -maxdepth 6 2>/dev/null | head -1)
+if [ -n "$_ICON_SET" ]; then
+  ls -la "$_ICON_SET/" 2>/dev/null | head -10
+  file "$_ICON_SET"/*1024*.png 2>/dev/null | grep -v "PNG" | head -5 || echo "Icon format OK"
+else
+  find . -name "AppIcon-*.png" -o -name "icon-*.png" 2>/dev/null | head -10
+fi
 echo "iOS requires: 1024x1024 (App Store), @2x/@3x for all device sizes"
 ```
 
@@ -149,6 +244,27 @@ ls -la ios/Runner/*.entitlements 2>/dev/null | head -5
 grep -r "aps-environment\|com.apple.developer" ios/Runner/*.entitlements 2>/dev/null | head -10
 ```
 
+### 1f. Privacy policy URL (required by both stores)
+
+```bash
+# iOS: privacy policy URL in App Store Connect metadata (not in code, but flag if missing from app)
+grep -rn "privacyPolicyURL\|privacy.policy\|privacy-policy" \
+  ios/ --include="*.plist" --include="*.swift" 2>/dev/null | head -5
+
+# Android: privacy policy in Play Console metadata
+grep -rn "privacyPolicy\|privacy_policy" \
+  android/ --include="*.xml" --include="*.kt" 2>/dev/null | head -5
+
+# Expo: privacyPolicyUrl in app.json
+grep -rn "privacyPolicyUrl\|privacyPolicy" app.json app.config.js 2>/dev/null | head -3 \
+  || echo "  WARN: No privacyPolicyUrl in app.json — required for both App Store and Play Store"
+```
+
+**Required:**
+- App Store: Privacy Policy URL in App Store Connect (apps that collect any data)
+- Play Store: Privacy Policy URL in store listing (mandatory for all apps since 2022)
+- Both reject apps without a working privacy policy URL
+
 ---
 
 ## Step 2: Google Play compliance
@@ -162,6 +278,11 @@ grep -r "compileSdkVersion\|targetSdkVersion\|minSdkVersion" android/app/build.g
 # Check for targetSdkVersion >= 35 (2026 requirement)
 grep "targetSdkVersion" android/app/build.gradle 2>/dev/null
 ```
+
+**Google Play API level timeline:**
+- targetSdkVersion < 34: Play Store **blocked new uploads** after Aug 31, 2024
+- targetSdkVersion < 35: Play Store **will block new uploads** in 2025 (confirm exact date in Play Console)
+- Run `grep "targetSdkVersion" android/app/build.gradle` and compare to current requirements
 
 **Requirements:**
 - targetSdkVersion >= 35 (2026 requirement)
@@ -183,17 +304,30 @@ grep -r "ndk.abiFilters" android/app/build.gradle 2>/dev/null | head -5
 - All .so files must include 64-bit variants (arm64-v8a, x86_64)
 - No 32-bit-only native code
 
-### 2c. Data Safety declaration
+### 2c. Data Safety declaration (Play Store — required)
 
 ```bash
-# Check for data safety JSON
+# Data safety JSON (if generated from Play Console)
 find . -name "play_data_safety.json" -o -name "data_safety.json" 2>/dev/null | head -5
-find . -name "app.*.json" -path "*/firebase/*" 2>/dev/null | head -5
+
+# Check what data the app actually collects — match against declaration
+grep -rn "Advertising\|Analytics\|Firebase\|Amplitude\|Segment\|Mixpanel\|Sentry\|Crashlytics" \
+  android/ --include="*.kt" --include="*.xml" 2>/dev/null | head -10
+
+# Kotlin/Android: check permissions vs data safety alignment
+grep -rn "uses-permission" android/app/src/main/AndroidManifest.xml 2>/dev/null | head -20
+
+# READ_PHONE_STATE, PROCESS_OUTGOING_CALLS — high scrutiny
+grep -rn "READ_PHONE_STATE\|PROCESS_OUTGOING_CALLS\|READ_CALL_LOG" \
+  android/app/src/main/AndroidManifest.xml 2>/dev/null | head -5 \
+  && echo "WARN: Telephony permissions require explicit justification"
 ```
 
-**Required for Play Store:**
-- Data Safety section in Play Console
-- Must declare: data collection, sharing, security practices
+**Play Store Data Safety requirements:**
+- Every SDK that collects data must be declared (Firebase, Crashlytics, analytics)
+- Google Play SDK Index: verify no SDK is flagged for policy violations
+- `android:hasFragileUserData="true"` in manifest if app stores payment/health data
+- DELETE_ACCOUNT deeplink required if app offers account deletion (Play policy 2024)
 
 ### 2d. Exported components
 
@@ -251,6 +385,37 @@ grep -rn "universalLinks\|appLinks\|associatedDomains\|android:scheme" \
 grep -rn "certificatePinning\|sslPinning\|allowBadCertificates\|validateServerTrust" \
   lib/ --include="*.dart" --include="*.swift" --include="*.kt" 2>/dev/null | head -10
 ```
+
+### 3d. Push notification compliance
+
+```bash
+# iOS: push notification entitlement
+grep -rn "aps-environment" ios/Runner/*.entitlements ios/*.entitlements 2>/dev/null | head -3 \
+  || find . -name "*.entitlements" -maxdepth 4 2>/dev/null | \
+     xargs grep -l "aps-environment" 2>/dev/null | head -3 \
+  || echo "  WARN: No aps-environment entitlement found — required for push notifications"
+
+# Android: FCM config
+find . -name "google-services.json" 2>/dev/null | head -3 \
+  || echo "  WARN: No google-services.json — required for FCM push notifications"
+
+# Permission timing: asking on first launch = ~80% deny rate (App Store review risk)
+# Flutter
+grep -rn "requestPermission\|FirebaseMessaging.instance.requestPermission" \
+  lib/ --include="*.dart" 2>/dev/null | head -5
+# iOS
+grep -rn "requestAuthorization\|UNUserNotificationCenter" \
+  ios/ --include="*.swift" 2>/dev/null | head -5
+# Android (Expo/RN)
+grep -rn "requestPermissionsAsync\|Notifications.requestPermissionsAsync" \
+  src/ --include="*.ts" --include="*.tsx" 2>/dev/null | head -5
+```
+
+**Push compliance rules:**
+- Never request push permission on first launch or before user understands the value
+- iOS: show a pre-permission prompt explaining why ("Get notified when your order ships") before the OS dialog
+- Android 13+: POST_NOTIFICATIONS permission required (runtime request, same rules as iOS)
+- App Review red flag: push permission prompt on first screen with no context
 
 ---
 

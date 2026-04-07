@@ -328,7 +328,7 @@ link_claude_skill_dirs() {
       # Skip mobile-only skills unless mobile_platform is set
       if [ "$MOBILE_PLATFORM" = "none" ]; then
         case "$dir_name" in
-          hig-review|mobile-security|mobile-qa|analytics-audit|onboarding-audit|store-ship|jank-removal|push-audit|mobile-retro) continue ;;
+          hig-review|mobile-security|store-compliance|perf-audit|tech-debt|mobile-qa|analytics-audit|onboarding-audit|store-ship|jank-removal|push-audit|mobile-retro|mobile-canary) continue ;;
         esac
       fi
       # Use frontmatter name: if present (e.g., run-tests/ with name: test → symlink as "test")
@@ -378,7 +378,7 @@ cleanup_old_claude_symlinks() {
       # Skip mobile-only skills unless mobile_platform is set
       if [ "$MOBILE_PLATFORM" = "none" ]; then
         case "$skill_name" in
-          hig-review|mobile-security|mobile-qa|analytics-audit|onboarding-audit|store-ship|jank-removal|push-audit|mobile-retro) continue ;;
+          hig-review|mobile-security|store-compliance|perf-audit|tech-debt|mobile-qa|analytics-audit|onboarding-audit|store-ship|jank-removal|push-audit|mobile-retro|mobile-canary) continue ;;
         esac
       fi
       old_target="$skills_dir/$skill_name"
@@ -425,7 +425,7 @@ cleanup_prefixed_claude_symlinks() {
       # Skip mobile-only skills unless mobile_platform is set
       if [ "$MOBILE_PLATFORM" = "none" ]; then
         case "$skill_name" in
-          hig-review|mobile-security|mobile-qa|analytics-audit|onboarding-audit|store-ship|jank-removal|push-audit|mobile-retro) continue ;;
+          hig-review|mobile-security|store-compliance|perf-audit|tech-debt|mobile-qa|analytics-audit|onboarding-audit|store-ship|jank-removal|push-audit|mobile-retro|mobile-canary) continue ;;
         esac
       fi
       prefixed_target="$skills_dir/gstack-$skill_name"
