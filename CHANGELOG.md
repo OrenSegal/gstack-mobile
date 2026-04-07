@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.15.16.0] - 2026-04-06
+
+### Added
+- Per-tab state isolation via TabSession. Each browser tab now has its own ref map, snapshot baseline, and frame context. Previously these were global on BrowserManager, meaning snapshot refs from one tab could collide with another. This is the foundation for parallel multi-tab operations.
+- Batch endpoint documentation in BROWSER.md with API shape, design decisions, and usage patterns.
+
+### Changed
+- Handler signatures across read-commands, write-commands, meta-commands, and snapshot now accept TabSession for per-tab operations and BrowserManager for global operations. This separation makes it explicit which operations are tab-scoped vs browser-scoped.
+
+### Fixed
+- codex-review E2E test was copying the full 55KB SKILL.md (1,075 lines), burning 8 Read calls just to consume it and exhausting the 15-turn budget before reaching the actual review. Now extracts only the review-relevant section (~6KB/148 lines), cutting Read calls from 8 to 1. Test goes from perpetual timeout to passing in 141s.
+
 ## [0.15.15.1] - 2026-04-06
 
 ### Fixed

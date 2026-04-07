@@ -981,26 +981,28 @@ async function handleCommandInternal(
   try {
     let result: string;
 
+    const session = browserManager.getActiveSession();
+
     if (READ_COMMANDS.has(command)) {
       const isScoped = tokenInfo && tokenInfo.clientId !== 'root';
       // Hidden element stripping for scoped tokens on text command
       if (isScoped && command === 'text') {
-        const page = browserManager.getPage();
+        const page = session.getPage();
         const strippedDescs = await markHiddenElements(page);
         if (strippedDescs.length > 0) {
           console.warn(`[browse] Content security: stripped ${strippedDescs.length} hidden elements for ${tokenInfo.clientId}`);
         }
         try {
-          const target = browserManager.getActiveFrameOrPage();
+          const target = session.getActiveFrameOrPage();
           result = await getCleanTextWithStripping(target);
         } finally {
           await cleanupHiddenMarkers(page);
         }
       } else {
-        result = await handleReadCommand(command, args, browserManager);
+        result = await handleReadCommand(command, args, session);
       }
     } else if (WRITE_COMMANDS.has(command)) {
-      result = await handleWriteCommand(command, args, browserManager);
+      result = await handleWriteCommand(command, args, session, browserManager);
     } else if (META_COMMANDS.has(command)) {
       // Pass chain depth + executeCommand callback so chain routes subcommands
       // through the full security pipeline (scope, domain, tab, wrapping).
@@ -1021,7 +1023,7 @@ async function handleCommandInternal(
             return;
           }
           try {
-            const snapshot = await handleSnapshot(['-i'], browserManager);
+            const snapshot = await handleSnapshot(['-i'], browserManager.getActiveSession());
             browserManager.addWatchSnapshot(snapshot);
           } catch {
             // Page may be navigating — skip this snapshot

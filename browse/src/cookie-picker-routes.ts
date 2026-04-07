@@ -155,7 +155,7 @@ export async function handleCookiePickerRoute(
       }
 
       // Add to Playwright context
-      const page = bm.getPage();
+      const page = bm.getActiveSession().getPage();
       await page.context().addCookies(result.cookies);
 
       // Track what was imported
@@ -187,7 +187,7 @@ export async function handleCookiePickerRoute(
         return errorResponse("Missing or empty 'domains' array", 'missing_param', { port });
       }
 
-      const page = bm.getPage();
+      const page = bm.getActiveSession().getPage();
       const context = page.context();
       for (const domain of domains) {
         await context.clearCookies({ domain });

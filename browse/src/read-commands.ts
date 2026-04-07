@@ -5,7 +5,7 @@
  * console, network, cookies, storage, perf
  */
 
-import type { BrowserManager } from './browser-manager';
+import type { TabSession } from './tab-session';
 import { consoleBuffer, networkBuffer, dialogBuffer } from './buffers';
 import type { Page, Frame } from 'playwright';
 import * as fs from 'fs';
@@ -94,11 +94,11 @@ export async function getCleanText(page: Page | Frame): Promise<string> {
 export async function handleReadCommand(
   command: string,
   args: string[],
-  bm: BrowserManager
+  session: TabSession
 ): Promise<string> {
-  const page = bm.getPage();
+  const page = session.getPage();
   // Frame-aware target for content extraction
-  const target = bm.getActiveFrameOrPage();
+  const target = session.getActiveFrameOrPage();
 
   switch (command) {
     case 'text': {
@@ -108,7 +108,7 @@ export async function handleReadCommand(
     case 'html': {
       const selector = args[0];
       if (selector) {
-        const resolved = await bm.resolveRef(selector);
+        const resolved = await session.resolveRef(selector);
         if ('locator' in resolved) {
           return await resolved.locator.innerHTML({ timeout: 5000 });
         }
@@ -190,7 +190,7 @@ export async function handleReadCommand(
     case 'css': {
       const [selector, property] = args;
       if (!selector || !property) throw new Error('Usage: browse css <selector> <property>');
-      const resolved = await bm.resolveRef(selector);
+      const resolved = await session.resolveRef(selector);
       if ('locator' in resolved) {
         const value = await resolved.locator.evaluate(
           (el, prop) => getComputedStyle(el).getPropertyValue(prop),
@@ -212,7 +212,7 @@ export async function handleReadCommand(
     case 'attrs': {
       const selector = args[0];
       if (!selector) throw new Error('Usage: browse attrs <selector>');
-      const resolved = await bm.resolveRef(selector);
+      const resolved = await session.resolveRef(selector);
       if ('locator' in resolved) {
         const attrs = await resolved.locator.evaluate((el) => {
           const result: Record<string, string> = {};
@@ -276,7 +276,7 @@ export async function handleReadCommand(
       const selector = args[1];
       if (!property || !selector) throw new Error('Usage: browse is <property> <selector>\nProperties: visible, hidden, enabled, disabled, checked, editable, focused');
 
-      const resolved = await bm.resolveRef(selector);
+      const resolved = await session.resolveRef(selector);
       let locator;
       if ('locator' in resolved) {
         locator = resolved.locator;
