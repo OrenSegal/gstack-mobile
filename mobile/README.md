@@ -69,6 +69,7 @@ mobile-qa/            ← Testing guidance
 analytics-audit/      ← Tracking review
 onboarding-audit/     ← Activation review
 store-ship/           ← Store submission
+aso/                  ← App Store Optimization
 jank-removal/         ← Performance tuning
 push-audit/           ← Notification audit
 mobile-retro/         ← Ship retrospective
