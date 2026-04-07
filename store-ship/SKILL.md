@@ -1,135 +1,235 @@
 ---
 name: store-ship
-description: App Store and Google Play submission — build preparation, metadata, submission workflow, build management, and post-submission monitoring.
+preamble-tier: 4
+version: 1.0.0
+description: |
+  Ship a mobile build to TestFlight (iOS) or Play Console internal track (Android).
+  Checks version bump, builds in release mode, verifies privacy manifests, uploads,
+  and posts the build link to Slack/Linear. Replaces /ship for mobile apps. (gstack-mobile)
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Grep
+  - AskUserQuestion
+---
+<!-- gstack-mobile: store-ship/SKILL.md -->
+
+## Preamble (run first)
+
+```bash
+_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+_MOBILE_PLATFORM=$(~/.claude/skills/gstack/bin/gstack-config get mobile_platform 2>/dev/null || echo "unknown")
+_TEL_START=$(date +%s)
+_SESSION_ID="$$-$(date +%s)"
+echo "BRANCH: $_BRANCH"
+echo "MOBILE_PLATFORM: $_MOBILE_PLATFORM"
+source ~/.gstack/mobile.env 2>/dev/null || echo "WARN: ~/.gstack/mobile.env not found — credentials unavailable"
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"store-ship","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
+```
+
 ---
 
 # /store-ship
 
-Run this after `/onboarding-audit` and before `/canary`. This skill handles the mechanics of submitting to the App Store and Google Play, including build preparation, metadata, submission, and monitoring.
+Ships the mobile build. Does not ship until all gate checks pass.
 
-## Use when
+---
 
-- Preparing a build for initial submission or update.
-- Setting up continuous delivery for mobile.
-- Responding to App Store or Play review feedback.
-- Managing build versions and rollout phases.
-- Setting up TestFlight or internal testing tracks.
-- Configuring app signing and certificates.
+## Step 1: Gate checks (run all, block on any FAIL)
 
-## Inputs
+```bash
+# 1a. Version bump check
+# Flutter
+_CURRENT_VERSION=$(grep "^version:" pubspec.yaml 2>/dev/null | awk '{print $2}')
+echo "CURRENT_VERSION: $_CURRENT_VERSION"
+# iOS
+_IOS_BUILD=$(grep "CURRENT_PROJECT_VERSION" ios/Runner.xcodeproj/project.pbxproj 2>/dev/null | head -1 | awk -F'= ' '{print $2}' | tr -d ';')
+echo "IOS_BUILD_NUMBER: $_IOS_BUILD"
+# Android
+_ANDROID_BUILD=$(grep "versionCode" android/app/build.gradle 2>/dev/null | head -1 | awk '{print $NF}')
+echo "ANDROID_VERSION_CODE: $_ANDROID_BUILD"
 
-Collect or infer:
+# 1b. Check analytics-audit was run on this branch
+_AUDIT_LOG="$HOME/.gstack/analytics/skill-usage.jsonl"
+grep "analytics-audit" "$_AUDIT_LOG" 2>/dev/null | grep "$_BRANCH" | tail -1 || echo "WARN: analytics-audit not run on this branch"
 
-- Platform: `flutter`, `swift`, `kotlin`, or `expo`.
-- Target OS: iOS, Android, or both.
-- Submission type: initial submission, update, or TestFlight/internal testing.
-- Build status: built, signed, ready for upload.
-- Metadata status: screenshots, descriptions, keywords prepared.
-- Review notes: any special review information needed (e.g., demo account, video).
-- Rollout strategy: immediate, phased, or manual.
+# 1c. Check mobile-qa was run
+grep "mobile-qa" "$_AUDIT_LOG" 2>/dev/null | grep "$_BRANCH" | tail -1 || echo "WARN: mobile-qa not run on this branch"
 
-If platform is missing:
-- Read `~/.gstack/config` or project docs.
-- If still unclear, ask one concise question before proceeding.
+# 1d. iOS Privacy manifest check (iOS 17+ requirement)
+find . -name "PrivacyInfo.xcprivacy" 2>/dev/null | head -5
+[ -z "$(find . -name "PrivacyInfo.xcprivacy" 2>/dev/null)" ] && echo "WARN: No PrivacyInfo.xcprivacy found — required for iOS 17+"
 
-## Review standard
+# 1e. No NSAllowsArbitraryLoads in production
+grep -r "NSAllowsArbitraryLoads" ios/ --include="*.plist" 2>/dev/null | grep -v "false" | head -5
 
-### 1. Build preparation
-- Version number (CFBundleShortVersionString / versionName) incremented.
-- Build number (CFBundleVersion / versionCode) incremented monotonically.
-- Debug code removed or stripped in release.
-- Crash reporting integrated (Sentry, Firebase Crashlytics).
-- No hardcoded test URLs or debug features in release.
-- Asset optimization completed (app icon, splash, images).
+# 1f. Android: check for minifyEnabled in release
+grep -r "minifyEnabled.*true" android/app/build.gradle 2>/dev/null | head -3 || echo "WARN: minifyEnabled not found in release build"
+```
 
-### 2. App signing
-- iOS: valid distribution certificate, appropriate provisioning profile (App Store or Ad Hoc).
-- Android: valid signing key (don't lose or change the keystore for existing apps).
-- Flutter/Expo: correctly configured for release builds.
-- Secrets loaded from environment, not embedded in binary.
+If version has not been bumped since last ship, AskUserQuestion:
+- A) Bump version now (show current → suggest next)
+- B) Cancel ship
 
-### 3. iOS App Store specific
-- Privacy nutrition labels completed accurately.
-- Age rating questionnaire accurate.
-- App Store screenshots meet specifications (different sizes, no device frames).
-- App preview videos (optional but recommended).
-- Keywords optimized for search (100 characters, comma-separated).
-- Description includes feature list and call to action.
-- Test account provided if login is required.
-- Demo video provided if hardware features need demonstration.
+If `analytics-audit` or `mobile-qa` not run: warn but do not block (these may have been run on a different branch).
 
-### 4. Google Play specific
-- App listing complete (short description, full description, screenshots, feature graphic).
-- Release track configured (production, internal testing, closed, open).
-- Target audience and content rating completed.
-- Data safety section completed accurately.
-- Pricing and distribution set correctly (free/paid, countries).
-- App bundle (AAB) or APK properly configured.
+---
 
-### 5. Submission workflow
-- Fastlane or equivalent CI integration in place.
-- Build upload automated (Transporter for iOS, Play Console API for Android).
-- Submission creates version record for tracking.
-- Review submission doesn't include extraneous build notes.
+## Step 2: Determine ship target
 
-### 6. Post-submission
-- Build appears in console within expected time (minutes to hours).
-- Review time estimated (iOS: hours to days, Android: hours to days, often faster for updates).
-- Rollout strategy set (immediate for low-risk, phased for regression detection).
-- Monitoring enabled for crashes and ANRs.
-- Store listing monitoring for any issues.
+```bash
+_PLATFORM=$(~/.claude/skills/gstack/bin/gstack-config get mobile_platform 2>/dev/null || echo "unknown")
+echo "Shipping to: $_PLATFORM"
 
-## Output format
+# Determine if iOS, Android, or both
+_IS_IOS=0
+_IS_ANDROID=0
+[ -d "ios" ] && [ -f "ios/Runner.xcodeproj/project.pbxproj" ] && _IS_IOS=1
+[ -d "android" ] && [ -f "android/app/build.gradle" ] && _IS_ANDROID=1
+echo "iOS: $_IS_IOS, Android: $_IS_ANDROID"
+```
 
-Use this exact structure:
+---
 
-### Verdict
-One paragraph with a blunt recommendation:
-- `PASS`
-- `PASS WITH WARNINGS`
-- `FAIL`
+## Step 3: iOS ship (if applicable)
 
-### Critical issues
-Bullets only. Include only issues that will block submission or cause rejection.
+**3a. Build iOS for App Store / TestFlight**
 
-### Warnings
-Bullets only. Important but non-blocking.
+```bash
+# Verify certificates
+security find-identity -v -p codesigning ios/ 2>/dev/null | head -5
 
-### Platform-specific notes
-Split into:
-- `iOS`
-- `Android`
-- `Flutter / shared`
-Only include sections that apply.
+# Build for App Store (or TestFlight if not ready for full submission)
+cd ios
+# For TestFlight: use --simulator=NO and proper provisioning
+xcodebuild -workspace Runner.xcworkspace -scheme Runner \
+  -configuration Release \
+  -sdk iphoneos \
+  -archivePath ~/Desktop/build.xcarchive \
+  archive 2>&1 | tail -30
 
-### Submission steps
-Give the exact commands or steps to submit.
+# Export for upload
+xcodebuild -exportArchive \
+  -archivePath ~/Desktop/build.xcarchive \
+  -exportOptionsPlist ExportOptions.plist \
+  -exportPath ~/Desktop/build-output \
+  2>&1 | tail -20
+```
 
-### Build checklist
-Provide a short, execution-ready checklist.
+**3b. Upload to App Store Connect**
 
-## Style
+```bash
+# Option 1: Transporter (manual, reliable)
+# open ~/Desktop/build-output/Runner.ipa (will open Transporter)
 
-- Be direct and specific.
-- Focus on common rejection reasons.
-- Recommend automation (Fastlane, Play Console API) over manual upload.
-- Flag issues that cause review delays or rejections.
-- Don't suggest anything that violates store guidelines.
+# Option 2: Fastlane (if configured)
+# fastlane deliver --ipa_path ~/Desktop/build-output/Runner.ipa
 
-## Mobile-specific checks
+# Option 3: ASC CLI (if configured)
+# xcrun altool --upload-app -f ~/Desktop/build-output/Runner.ipa -t ios -u "$ASC_KEY_ID" -k "$ASC_PRIVATE_KEY_PATH"
+```
 
-- Version and build numbers correct and monotonic.
-- Signing certificates valid and not expired.
-- Privacy disclosures accurate.
-- No guideline violations in app functionality or metadata.
+**3c. Create TestFlight build record**
 
-## Examples
+After upload, the build appears in App Store Connect. Note the build number and
+submit for TestFlight review if required.
 
-Good prompts:
-- `/store-ship prepare this Flutter app for App Store submission`
-- `/store-ship set up Fastlane for automated Play Console uploads`
-- `/store-ship review this build for submission readiness`
+---
 
-Bad prompts:
-- `/store-ship submit the app`
-- `/store-ship check if ready`
+## Step 4: Android ship (if applicable)
+
+**4a. Build Android release**
+
+```bash
+# Flutter: build app bundle (preferred for Play)
+flutter build appbundle --release 2>&1 | tail -20
+
+# Or APK if needed
+# flutter build apk --release
+
+# Check output
+ls -la build/app/outputs/flutter-apk/ 2>/dev/null || ls -la build/app/outputs/bundle/release/ 2>/dev/null
+```
+
+**4b. Upload to Play Console**
+
+```bash
+# Option 1: Play Console UI (manual)
+
+# Option 2: Fastlane (if configured)
+# fastlane supply --apk build/app/outputs/flutter-apk/app-release.apk
+
+# Option 3: Play Developer API (if credentials configured)
+# Upload using https://github.com/codepath/android-upload-plugin or similar
+```
+
+**4c. Configure release track**
+
+In Play Console:
+- Internal testing: fast feedback, all testers get access
+- Closed beta: specific tester groups
+- Production: phased rollout or full release
+
+---
+
+## Step 5: Notify (post-ship)
+
+```bash
+# Determine what to post
+_BUILD_URL=""
+_BUILD_NOTES=""
+
+# iOS: App Store Connect build URL (if available)
+# Android: Play Console internal track link
+
+echo "Ship complete!"
+echo "iOS: $_IS_IOS"
+echo "Android: $_IS_ANDROID"
+echo "Branch: $_BRANCH"
+echo "Build: $_CURRENT_VERSION / $_IOS_BUILD / $_ANDROID_BUILD"
+echo ""
+echo "Next: /canary to monitor for crashes"
+```
+
+---
+
+## Step 6: Output
+
+STORE-SHIP RESULTS
+═══════════════════════════════════════════════════════════
+Platform: {flutter|expo|swift|kotlin}
+Ship target: {TestFlight|Play Internal|Production}
+iOS Build: {build number}
+Android Build: {version code}
+Status: SHIPPED / BLOCKED
+
+Gates passed:
+- Version bump: YES/NO
+- analytics-audit: RUN/NOT RUN
+- mobile-qa: RUN/NOT RUN
+- Privacy manifest: YES/NO/MISSING (iOS 17+)
+- ATS disabled: YES/NO
+
+Ship location: {URL or console path}
+
+Next steps:
+1. /canary --platform mobile (monitor for crashes)
+2. Wait for review (iOS: hours to days, Android: typically faster)
+3. Monitor store listing after approval
+═══════════════════════════════════════════════════════════
+
+---
+
+## Step 7: Completion
+
+```bash
+_TEL_END=$(date +%s)
+_TEL_DUR=$(( _TEL_END - _TEL_START ))
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"store-ship","event":"completed","branch":"'"$(git branch --show-current 2>/dev/null || echo unknown)"'","outcome":"OUTCOME","duration_s":"'"$_TEL_DUR"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null || true
+if [ "$_TEL" != "off" ]; then
+echo '{"skill":"store-ship","duration_s":"'"$_TEL_DUR"'","outcome":"OUTCOME","session":"'"$_SESSION_ID"'","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
+fi
+```
+
+Replace `OUTCOME` with `success`, `fail`, or `abort`.
