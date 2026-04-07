@@ -1,89 +1,58 @@
 # gstack-mobile
 
-Mobile-native extension pack for gstack. Adds specialized skills for building, reviewing, shipping, and maintaining mobile apps alongside gstack's existing web-focused workflow.
+Mobile-native extension for gstack. Adds the full lifecycle missing from the web-first stack:
+platform design review, mobile security, simulator QA, analytics verification, onboarding
+auditing, store ship, jank removal, push auditing, and mobile retro.
 
-## Supported platforms
+Supports Flutter, Expo, Swift, and Kotlin. Platform-aware: each skill reads `mobile_platform`
+from `~/.gstack/config` and branches behavior accordingly.
 
-- Flutter
-- Expo (React Native)
-- Swift (iOS)
-- Kotlin (Android)
-
-## Configuration
-
-**Saved config:** `mobile_platform`
-
-Set via `./setup --platform flutter|expo|swift|kotlin|none`
-
-**Secrets file:** `~/.gstack/mobile.env`
-
-Copy from `mobile/.env.example` and fill in your credentials.
-
-## Mobile workflow
-
-```
-/office-hours
-  → Problem definition, lean MVP scoping
-
-/plan-ceo-review + /plan-eng-review
-  → Strategy and architecture lock
-
-/hig-review
-  → Platform-native UI review before code
-
-/review + /mobile-security
-  → Code review + security audit
-
-/mobile-qa
-  → Simulator/device testing, accessibility audit
-
-/analytics-audit
-  → Event schema, tracking implementation
-
-/onboarding-audit
-  → First-run experience, activation funnel
-
-/store-ship
-  → App Store / Play submission, build management
-
-/canary
-  → Post-deploy monitoring, crash tracking
-
-/aso
-  → App store optimization, keyword research
-
-/mobile-retro
-  → Ship retrospective, velocity metrics
-```
-
-## Directory structure
-
-```
-mobile/
-  README.md           ← This file
-  .env.example         ← Secrets template
-
-hig-review/            ← Pre-build UI review
-mobile-security/      ← Security audit
-mobile-qa/            ← Testing guidance
-analytics-audit/      ← Tracking review
-onboarding-audit/     ← Activation review
-store-ship/           ← Store submission
-aso/                  ← App Store Optimization
-jank-removal/         ← Performance tuning
-push-audit/           ← Notification audit
-mobile-retro/         ← Ship retrospective
-```
-
-## Quick start
+## Setup
 
 ```bash
-# Configure your mobile platform
-./setup --platform flutter
-
-# Copy and fill secrets
-cp mobile/.env.example ~/.gstack/mobile.env
-
-# Run a mobile-focused skill
-/hig-review
+./setup --platform flutter    # or expo, swift, kotlin, none
 ```
+
+Config is saved to `~/.gstack/config` via `gstack-config`. Secrets go in `~/.gstack/mobile.env`
+(generated from `mobile/.env.example`). Never commit that file.
+
+## Workflow
+
+/office-hours
+↓ /plan-ceo-review + /plan-eng-review
+↓ /hig-review ← before code, not after
+↓ [build]
+↓ /review + /mobile-security
+↓ /mobile-qa [simulator matrix]
+↓ /jank-removal
+↓ /analytics-audit
+↓ /onboarding-audit ← only if touching activation flows
+↓ /push-audit ← only if touching notification flows
+↓ /store-ship [testflight|internal]
+↓ /canary --platform mobile
+↓ /aso ← after each major version
+↓ /mobile-retro [weekly]
+
+## AARRR map
+
+| Funnel stage | Skill |
+|---|---|
+| Acquisition | `/aso`, `/office-hours` |
+| Activation | `/onboarding-audit`, `/hig-review` |
+| Retention | `/push-audit`, `/mobile-retro`, `/jank-removal` |
+| Revenue | `/mobile-security`, `/store-ship` |
+| Referral | `/analytics-audit`, `/mobile-retro` |
+
+## Platform support
+
+| Platform | HIG/Material | Build tool | Ship target |
+|---|---|---|---|
+| `flutter` | Both (platform-adaptive) | `flutter build ipa` / `appbundle` | TestFlight + Play Internal |
+| `expo` | Both (Expo Router) | `eas build` | EAS Submit |
+| `swift` | HIG (iOS/macOS) | `xcodebuild` | TestFlight |
+| `kotlin` | Material 3 (Android) | Gradle | Play Internal |
+
+## Secrets
+
+Copy `mobile/.env.example` to `~/.gstack/mobile.env` and fill in values.
+Skills source this file at runtime. It is never committed.
