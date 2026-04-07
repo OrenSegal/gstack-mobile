@@ -1,143 +1,201 @@
 ---
 name: onboarding-audit
-description: Onboarding and activation audit for mobile apps — review first-run experience, activation funnel, onboarding metrics, and time-to-value.
+preamble-tier: 4
+version: 1.0.0
+description: |
+  Onboarding and activation audit for mobile apps. Reviews first-run experience, activation
+  funnel metrics, signup-to-value distance, permission timing, and AARRR activation traps.
+  Run AFTER /analytics-audit if onboarding was modified, or standalone when activation
+  metrics are poor. (gstack-mobile)
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Grep
+  - Glob
+  - AskUserQuestion
+---
+<!-- gstack-mobile: onboarding-audit/SKILL.md -->
+
+## Preamble (run first)
+
+```bash
+_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+_MOBILE_PLATFORM=$(~/.claude/skills/gstack/bin/gstack-config get mobile_platform 2>/dev/null || echo "unknown")
+_TEL_START=$(date +%s)
+_SESSION_ID="$$-$(date +%s)"
+echo "BRANCH: $_BRANCH"
+echo "MOBILE_PLATFORM: $_MOBILE_PLATFORM"
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"onboarding-audit","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
+```
+
 ---
 
 # /onboarding-audit
 
-Run this after `/analytics-audit` and before `/store-ship`. This skill reviews onboarding flows to ensure users quickly reach your "aha moment" and become active users rather than bouncing.
+The #1 killer of mobile apps: users download, open, see a signup wall, and leave.
+This audit measures the distance from cold launch to "aha moment" and flags anything
+that blocks activation.
 
-## Use when
+---
 
-- Designing or changing onboarding, signup, or first-run flows.
-- Reviewing a PR that touches the onboarding sequence.
-- Investigating low activation rates or high drop-off.
-- Setting up onboarding analytics and success metrics.
-- Preparing for launch and you want to optimize activation.
-- Adding paywalls or gates that could block activation.
+## Step 0: Identify onboarding surfaces
 
-## Inputs
+Find all onboarding-related code:
 
-Collect or infer:
+```bash
+# Flutter
+grep -r "onboarding\|welcome\|intro\|first_time\|onboard" lib/ --include="*.dart" -l 2>/dev/null | head -10
 
-- Platform: `flutter`, `swift`, `kotlin`, or `expo`.
-- Target OS: iOS, Android, or both.
-- What changed: diff, PR, or flow description.
-- Current onboarding flow: how many steps, what gates exist.
-- Activation metric: what behavior defines a "activated" user (first purchase, first use of core feature, etc.).
-- Aha moment: what is the key value users should experience first.
+# iOS Swift
+find . -name "*Onboarding*" -o -name "*Welcome*" -o -name "*Intro*" 2>/dev/null | grep -v Pods | head -10
 
-If platform is missing:
-- Read `~/.gstack/config` or project docs.
-- If still unclear, ask one concise question before proceeding.
+# Android Kotlin
+find . -name "*Onboarding*" -o -name "*Welcome*" -o -name "*Intro*" 2>/dev/null | head -10
 
-## Review standard
+# Expo/React Native
+grep -r "onboarding\|welcome\|intro" src/ --include="*.tsx" --include="*.ts" -l 2>/dev/null | head -10
+```
 
-### 1. First-run experience
-- No forced signup/registration before showing any value.
-- First screen clearly communicates what the app does and why it's worth time.
-- Onboarding completes in under 60 seconds on average.
-- No unnecessary permissions requested upfront (delay until needed).
-- Skip option available and doesn't punish users.
+Identify the onboarding flow:
+- How many screens/steps?
+- What gates exist (signup, email verify, permission asks)?
+- What is the "aha moment" — the first action that proves value?
 
-### 2. Activation funnel
-- Maximum 3 taps to reach the core value.
-- No dead-end paths where users get stuck.
-- Clear progress indicators so users know how much is left.
-- Errors are recoverable, not fatal to the flow.
-- Back navigation works correctly at every step.
+---
 
-### 3. Value demonstration
-- The "aha moment" happens within the first session.
-- First-time user sees something personalized to them, not generic empty state.
-- Demo or tutorial shows real use cases, not abstract instructions.
-- Gamification or social proof used appropriately, not as a crutch.
+## Step 1: Distance to value (tap count)
 
-### 4. Friction and drop-off points
-- Identify where users abandon (analytics + heuristic).
-- Long forms broken into micro-steps.
-- Optional fields are truly optional, not hidden as required.
-- Keyboard handling correct (no form jumping on input focus).
-- No unexpected paywalls blocking core functionality.
+Walk through the flow from cold launch:
 
-### 5. Analytics and measurement
-- Funnel events tracked (onboarding_start, onboarding_complete, activation).
-- Drop-off rates measurable at each step.
-- Time-to-activation tracked and monitored.
-- Segment by platform, source, and user type.
-- Baseline established before changes.
+1. Splash / loading → time to first meaningful screen
+2. First screen → what does user see? (value prop, or signup wall?)
+3. Each subsequent tap → what extra action is required before value?
 
-### 6. Platform conventions
-- iOS: respect system appearance, don't override gestures, use native sheets/modals.
-- Android: back button works correctly, use Material components, don't block system navigation.
-- Flutter/Expo: consistent with platform feel, not just web ported to mobile.
+**Target:** 3 taps or fewer to experience core value.
 
-### 7. Accessibility
-- Onboarding works with VoiceOver/TalkBack.
-- Dynamic Type supported without breaking layout.
-- Color is not the only indicator of state.
-- All interactive elements reachable via keyboard/voice.
+Check for:
+- [ ] Signup wall before any value shown (CRITICAL — App Store rejection risk)
+- [ ] Email verification required before any value (CRITICAL)
+- [ ] Multiple permission asks on first launch (WARN)
+- [ ] Tutorial/interstitial before first action (WARN if >1 screen)
+- [ ] Paywall before core value demonstrated (CRITICAL)
 
-## Output format
+---
 
-Use this exact structure:
+## Step 2: Permission timing
 
-### Verdict
-One paragraph with a blunt recommendation:
-- `PASS`
-- `PASS WITH WARNINGS`
-- `FAIL`
+This is the most common activation killer.
 
-### Critical issues
-Bullets only. Include only issues that block activation or cause high drop-off.
+```bash
+# Find permission requests in onboarding flow
+grep -r "permission\|requestPermission\|authorize\|request.*location\|request.*camera\|request.*notification" \
+  lib/ src/ --include="*.dart" --include="*.tsx" --include="*.swift" --include="*.kt" -l 2>/dev/null | head -10
+```
 
-### Warnings
-Bullets only. Important but non-blocking.
+Check:
+- [ ] Notification permission: NOT on first screen. Asked after user demonstrates intent.
+- [ ] Location permission: NOT on first screen. Asked when location feature is invoked.
+- [ ] Camera/Microphone: only when user explicitly invokes the feature.
+- [ ] Contacts: only if core functionality requires it, not as "discover more friends."
+- [ ] If permission denied: does the app work without it, or does it block the user?
 
-### Platform-specific notes
-Split into:
-- `iOS`
-- `Android`
-- `Flutter / shared`
-Only include sections that apply.
+---
 
-### Recommended funnel fix
-Give the most opinionated path to improve activation.
+## Step 3: Analytics events for onboarding
 
-### Build checklist
-Provide a short, execution-ready checklist.
+Verify the right events exist:
 
-## Style
+```bash
+grep -r "onboarding_start\|onboarding_complete\|onboarding_step\|first_open\|signup_start\|signup_complete" \
+  lib/ src/ --include="*.dart" --include="*.tsx" --include="*.swift" --include="*.kt" -r . 2>/dev/null | head -20
+```
 
-- Be direct and specific.
-- Optimize for time-to-value, not feature completeness.
-- Don't suggest adding more steps — suggest removing friction.
-- Consider the user's context (distracted, on mobile, possibly returning later).
-- Flag any "dark patterns" that could fail store review or damage trust.
+Required:
+- `onboarding_start` — fires on first launch
+- `onboarding_step_{N}_completed` — fires when each step is done
+- `onboarding_complete` — fires when onboarding ends (success)
+- `onboarding_abandoned` — fires if user exits during onboarding
 
-## AARRR lens
+If not present: missing this means you can't measure activation funnel. This is WARN.
 
-- Acquisition: onboarding is your first impression, matches store listing?
-- Activation: how many steps to value, what is the "aha moment"?
-- Retention: does onboarding set accurate expectations for ongoing value?
-- Referral: any social or share features that could amplify activation?
-- Revenue: are paywalls placed after value is demonstrated?
+---
 
-## Mobile-specific checks
+## Step 4: Activation funnel analysis
 
-- First launch shows something meaningful immediately.
-- No forced signup before any interaction.
-- Permissions requested at point of use, not on launch.
-- Skip onboarding works and doesn't degrade experience.
-- Dark mode doesn't break onboarding UI.
+If analytics data exists (from `/analytics-audit` or production):
 
-## Examples
+Query the funnel:
+- What % of users start onboarding?
+- What % complete each step?
+- Where is the biggest drop-off?
+- What is median time to complete?
+- What is time from install to first core action?
 
-Good prompts:
-- `/onboarding-audit review this signup flow for activation drop-off`
-- `/onboarding-audit optimize this onboarding for faster time-to-value`
-- `/onboarding-audit check if this paywall placement will hurt activation`
+**Red flags:**
+- >30% drop-off between step 1 and step 2
+- >50% drop-off from start to complete
+- Time to core value > 60 seconds
 
-Bad prompts:
-- `/onboarding-audit make onboarding better`
-- `/onboarding-audit review the flow`
+---
+
+## Step 5: Platform-specific checks
+
+**iOS:**
+- [ ] Respects Dynamic Type (scales in Settings → Accessibility)
+- [ ] Works with VoiceOver (can complete onboarding without seeing)
+- [ ] Does not use custom signup UI that mimics Apple ID prompt (rejection risk)
+- [ ] Uses Sign in with Apple if offering social login (App Store requirement if applicable)
+
+**Android:**
+- [ ] Predictive back gesture works correctly in onboarding screens
+- [ ] Uses Material 3 components, not custom UI that mimics system dialogs
+- [ ] Navigation back works correctly on every screen
+- [ ] Does not request background location during onboarding
+
+**Flutter:**
+- [ ] `SafeArea` wraps onboarding screens
+- [ ] Keyboard handling correct on any form fields
+- [ ] `ListView.builder` for any scrollable content (not expensive `ListView` with children)
+
+**Expo:**
+- [ ] `SafeAreaView` from `react-native-safe-area-context` used
+- [ ] `KeyboardAvoidingView` handles keyboard correctly
+
+---
+
+## Step 6: Output format
+
+ONBOARDING AUDIT
+═══════════════════════════════════════════════════════════
+
+Activation distance: {N} taps to core value
+Aha moment: {describe what it is}
+
+Permission timing
+Notification: FIRST SCREEN / POST-VALUE / NEVER
+Location: FIRST SCREEN / POST-VALUE / NEVER
+Camera/Mic: FIRST SCREEN / POST-VALUE / NEVER
+
+Events present: YES/NO
+- onboarding_start: FOUND/MISSING
+- onboarding_step_N_completed: FOUND/MISSING
+- onboarding_complete: FOUND/MISSING
+- onboarding_abandoned: FOUND/MISSING
+
+Platform issues: {list any issues}
+
+VERDICT: PASS / PASS WITH WARNINGS / FAIL
+═══════════════════════════════════════════════════════════
+
+If VERDICT is FAIL, this blocks `/store-ship`. Fix onboarding first.
+
+---
+
+## Step 7: Completion
+
+```bash
+_TEL_END=$(date +%s)
+_TEL_DUR=$(( _TEL_END - _TEL_START ))
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"onboarding-audit","event":"completed","branch":"'"$(git branch --show-current 2>/dev/null || echo unknown)"'","outcome":"OUTCOME","duration_s":"'"$_TEL_DUR"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null || true
+```
