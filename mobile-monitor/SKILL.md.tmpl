@@ -1,0 +1,235 @@
+---
+name: mobile-monitor
+preamble-tier: 2
+version: 1.0.0
+description: |
+  Post-launch mobile monitoring. Triages crash reports from Crashlytics, Sentry, or
+  Datadog; monitors App Store and Google Play ratings and recent reviews; tracks core
+  performance metrics (crash-free rate, ANR rate, startup time). Classifies crashes as
+  REGRESSION, KNOWN, or NEW. For NEW or REGRESSION crashes, offers to hand off to
+  /investigate. Persists baselines for trend tracking.
+  Use when: "check crashes", "monitor app", "crash report", "app reviews",
+  "rating monitoring", "post-launch check", "how is the app doing", "any crashes?".
+  Proactively suggest after every /mobile-ship deployment. (gstack)
+voice-triggers:
+  - "app health"
+  - "crash check"
+  - "monitor release"
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - AskUserQuestion
+  - WebSearch
+---
+
+{{PREAMBLE}}
+
+# /mobile-monitor: Post-Launch Monitoring
+
+You are the on-call engineer checking in on a live mobile app. Your job is to surface
+real problems fast — not noise. Classify every crash before reporting it.
+
+**Iron Law: Never report a crash as NEW without checking if it existed before the
+current release. Compare against the deployment log in `.gstack/deployments/`.**
+
+---
+
+## Step 1: Ecosystem Detection and Deployment Context
+
+{{MOBILE_DETECT}}
+
+```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
+# Find most recent deployment log
+ls -t .gstack/deployments/mobile-*.json 2>/dev/null | head -3
+cat "$(ls -t .gstack/deployments/mobile-*.json 2>/dev/null | head -1)" 2>/dev/null
+```
+
+Note the deployment date, version, and platform. This is the baseline for regression detection.
+
+---
+
+## Step 2: Detect Monitoring Provider
+
+```bash
+# Firebase Crashlytics
+grep -rn "firebase_crashlytics\|FirebaseCrashlytics\|com.google.firebase.crashlytics" \
+  pubspec.yaml Podfile Podfile.lock build.gradle* package.json 2>/dev/null | head -3
+
+# Sentry
+grep -rn "sentry\|SentrySDK\|io.sentry\|@sentry/" \
+  pubspec.yaml Podfile build.gradle* package.json 2>/dev/null | head -3
+
+# Datadog
+grep -rn "datadog\|DatadogSDK\|dd-sdk" \
+  pubspec.yaml Podfile build.gradle* package.json 2>/dev/null | head -3
+
+# Check for CLI tools
+sentry-cli --version 2>/dev/null && echo "SENTRY_CLI:available"
+firebase --version 2>/dev/null && echo "FIREBASE_CLI:available"
+```
+
+---
+
+## Step 3: Pull Crash Reports
+
+**If Sentry CLI available and `SENTRY_AUTH_TOKEN` set:**
+```bash
+sentry-cli releases list 2>/dev/null | head -5
+sentry-cli issues list \
+  --project "${SENTRY_PROJECT}" \
+  --org "${SENTRY_ORG}" \
+  --status unresolved \
+  --limit 20 \
+  2>/dev/null | head -40
+```
+
+**If Firebase CLI available:**
+```bash
+# List recent crashes from Firebase Crashlytics
+firebase crashlytics:symbols:upload --help 2>/dev/null | head -3
+# Note: Crashlytics crash listing requires the REST API; guide user if CLI insufficient
+```
+
+**If no CLI available:**
+Use AskUserQuestion:
+"I can't access your crash monitoring provider automatically. Please paste your top
+5 crashes from Crashlytics/Sentry/Datadog (stack trace + count + first/last seen).
+I'll classify and locate them in the codebase."
+
+---
+
+## Step 4: Classify Crashes
+
+For each crash report received, determine:
+
+1. **Crash-free rate**: What % of sessions are crash-free?
+   - Target: >99.5% (Play Store "bad behavior" threshold: <99.5%)
+   - Alert: <99.0% is CRITICAL
+
+2. **Classification** (compare against deployment baseline):
+   - **REGRESSION**: crash appeared or worsened after the current release version
+   - **KNOWN**: crash existed before the current release, unrelated to recent changes
+   - **NEW**: crash first seen in current or very recent release, no prior history
+
+3. **Locate crash site** in source code:
+   ```bash
+   # For each crash, grep for the top frame in the stack trace
+   grep -rn "<class_or_method_from_stack_trace>" \
+     --include="*.swift" --include="*.kt" --include="*.dart" --include="*.tsx" \
+     . 2>/dev/null | head -5
+   ```
+
+4. **Severity**:
+   - CRITICAL: affects >1% of sessions or crashes main flow (startup, login, checkout)
+   - HIGH: affects >0.1% of sessions
+   - MEDIUM: affects <0.1% of sessions, non-critical path
+   - LOW: rare crash, minor feature
+
+---
+
+## Step 5: App Store Rating Monitoring
+
+### iOS App Store (via public iTunes Search API)
+
+```bash
+# Get current rating (public — no auth needed)
+_BUNDLE_ID=$(grep "bundle_id:" CLAUDE.md 2>/dev/null | cut -d: -f2 | tr -d ' ')
+if [ -n "$_BUNDLE_ID" ]; then
+  curl -s "https://itunes.apple.com/lookup?bundleId=${_BUNDLE_ID}&country=us" 2>/dev/null | \
+    python3 -c "import sys,json; d=json.load(sys.stdin); r=d.get('results',[{}])[0]; print(f\"Rating: {r.get('averageUserRating','N/A')} ({r.get('userRatingCount','N/A')} ratings)\")" 2>/dev/null
+fi
+```
+
+### Google Play Store (manual check guidance)
+
+Google Play ratings require Play Developer API with auth. Guide:
+"Check Play Console → Android Vitals → Ratings for current period vs previous."
+
+### Compare Against Baseline
+
+```bash
+# Read prior rating baseline
+cat .gstack/monitor/ratings.json 2>/dev/null
+```
+
+If rating dropped >0.2 stars since last check → flag as HIGH. Save new reading:
+```bash
+mkdir -p .gstack/monitor
+echo "{\"date\":\"$(date -u +%Y-%m-%d)\",\"ios_rating\":X.X,\"android_rating\":X.X}" \
+  > .gstack/monitor/ratings.json
+```
+
+---
+
+## Step 6: Performance Metrics
+
+Ask user or parse from monitoring provider:
+
+| Metric | Target | Alert Threshold |
+|--------|--------|-----------------|
+| Crash-free rate | >99.5% | <99.0% = CRITICAL |
+| Android ANR rate | <0.47% | >1% = CRITICAL |
+| iOS startup (cold) | <2s | >5s = App Store warning |
+| Android startup (cold) | <1s TotalTime | >5s = Play Store bad behavior |
+| Memory (foreground) | <150MB | >300MB = OS may kill |
+
+```bash
+# Read prior performance baseline
+cat .gstack/monitor/performance-baseline.json 2>/dev/null
+```
+
+If current metrics are worse than baseline by >20%: flag as regression.
+
+---
+
+## Step 7: Monitor Report
+
+Write to `.gstack/monitor-reports/{YYYY-MM-DD}-mobile-monitor.md`:
+
+```markdown
+# Mobile Monitor Report — YYYY-MM-DD
+
+## Summary
+- Crash-free rate: X.X% (▲/▼ vs baseline)
+- iOS rating: X.X ★ (▲/▼ vs last check)
+- Android rating: X.X ★ (▲/▼ vs last check)
+- New crashes: N
+- Regression crashes: N
+
+## Crashes
+
+### [REGRESSION/NEW/KNOWN] CrashClass: message (N occurrences)
+- Severity: CRITICAL/HIGH/MEDIUM/LOW
+- First seen: date / Last seen: date
+- Affects: X% of sessions
+- Source: path/to/file.swift:line
+- Stack trace (top 5 frames): ...
+
+## Ratings
+- Recent reviews summary: ...
+
+## Recommendations
+1. [Priority action]
+2. ...
+```
+
+---
+
+## Step 8: Offer Investigate Handoff
+
+For each REGRESSION or NEW crash with HIGH/CRITICAL severity:
+
+"Found N new/regression crash(es). Would you like me to open an `/investigate`
+session on the highest-priority one?
+
+**[CrashClass]: [message]** — N occurrences, X% of sessions
+Stack trace:
+<top 10 frames>
+
+A) Yes — open `/investigate` with this crash
+B) Yes — open `/investigate` for all of them
+C) No — I'll look at these manually"
+
+If user selects A or B: invoke the `investigate` skill with the crash trace as context.

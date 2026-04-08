@@ -37,6 +37,8 @@ When the user types `/canary`, run this skill.
 - `/canary <url> --baseline` — capture baseline screenshots (run BEFORE deploying)
 - `/canary <url> --pages /,/dashboard,/settings` — specify pages to monitor
 - `/canary <url> --quick` — single-pass health check (no continuous monitoring)
+- `/canary --mobile` — monitor a mobile app after release (no URL needed)
+- `/canary --mobile --duration 20m` — monitor mobile for 20 minutes post-release
 
 ## Instructions
 
@@ -209,6 +211,79 @@ If the deploy is healthy, offer to update the baseline:
 - B) Keep old baseline
 
 If the user chooses A, copy the latest screenshots to the baselines directory and update `baseline.json`.
+
+---
+
+## Mobile Canary Mode (`--mobile` or no URL given + mobile ecosystem detected)
+
+{{MOBILE_DETECT}}
+
+If `--mobile` flag is present OR (`MOBILE_ECOSYSTEM` is not `unknown` AND no URL was provided),
+switch to **Mobile Canary Mode** instead of browser-based monitoring.
+
+### Mobile Setup: Load Deployment Baseline
+
+```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
+# Read most recent deployment log
+_DEPLOY=$(ls -t .gstack/deployments/mobile-*.json 2>/dev/null | head -1)
+cat "$_DEPLOY" 2>/dev/null || echo "No deployment log found — crash-rate comparison unavailable"
+```
+
+If no deployment log found: note as informational but continue.
+
+### Mobile Monitoring Loop
+
+Poll every 5 minutes for the configured duration (default: 10 minutes):
+
+```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
+# Check for ANR/crash on connected device/emulator
+adb logcat -d -v time *:E 2>/dev/null | \
+  grep -E "FATAL EXCEPTION|ANR in|Application Not Responding" | \
+  tail -10
+
+# iOS: check for crash logs on simulator
+ls ~/Library/Logs/DiagnosticReports/*.crash 2>/dev/null | \
+  sort -t_ -k1 -rn | head -3
+```
+
+For each monitoring cycle, report:
+1. **Crash-free rate** — compare against baseline crash rate from deployment log
+2. **ANR events** (Android) — any `ANR in <package>` in logcat since deploy
+3. **New crash logs** (iOS) — any `.crash` files newer than deploy time
+
+**Alert thresholds:**
+- CRITICAL: crash-free rate drops >0.5% below baseline (from deployment log)
+- HIGH: crash-free rate drops >0.1% below baseline
+- HIGH: any ANR event on Android
+- MEDIUM: new crash type not seen in last 3 deployments
+
+### Mobile Canary Report
+
+```
+MOBILE CANARY REPORT — <date> — <duration>min
+══════════════════════════════════════════════
+Version:        <from deployment log>
+Platform:       iOS / Android / Both
+Status:         HEALTHY / DEGRADED / BROKEN
+
+CRASH MONITORING
+  Crashes detected:     N
+  New crash types:      N
+  ANR events:           N
+  Crash-free rate:      X.X% (baseline: Y.Y%)
+
+ALERTS
+  [CRITICAL/HIGH/MEDIUM] — description
+```
+
+For any CRITICAL or HIGH alerts:
+- Flag for immediate investigation
+- Offer: "Would you like me to invoke `/mobile-monitor` for detailed triage?"
+- If rollout is staged (Android): note "Consider pausing rollout in Play Console"
+
+---
 
 ## Important Rules
 

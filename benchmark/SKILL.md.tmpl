@@ -39,6 +39,7 @@ When the user types `/benchmark`, run this skill.
 - `/benchmark <url> --pages /,/dashboard,/api/health` — specify pages
 - `/benchmark --diff` — benchmark only pages affected by current branch
 - `/benchmark --trend` — show performance trends from historical data
+- `/benchmark --mobile` — mobile app performance benchmarking (startup, size, memory)
 
 ## Instructions
 
@@ -226,6 +227,91 @@ TREND: Performance degrading. LCP doubled in 8 days.
 ### Phase 9: Save Report
 
 Write to `.gstack/benchmark-reports/{date}-benchmark.md` and `.gstack/benchmark-reports/{date}-benchmark.json`.
+
+---
+
+## Mobile Benchmark Mode (`--mobile` or mobile ecosystem detected)
+
+{{MOBILE_DETECT}}
+
+If `--mobile` flag is present OR `MOBILE_ECOSYSTEM` is not `unknown`, run mobile
+performance collection instead of (or in addition to) web benchmarking.
+
+### Mobile Phase 1: Binary Size
+
+```bash
+# iOS IPA
+find . -name "*.ipa" 2>/dev/null | xargs -I{} sh -c 'echo "IPA: {}"; ls -lh {}'
+# Framework breakdown
+find . -name "*.ipa" 2>/dev/null | head -1 | xargs -I{} sh -c \
+  'unzip -l {} 2>/dev/null | grep -E "\.framework|\.dylib|Assets\.car" | sort -k3 -rn | head -15'
+
+# Android AAB / APK
+find . -name "*.aab" -o -name "*-release.apk" 2>/dev/null | \
+  xargs -I{} sh -c 'echo "Build: {}"; ls -lh {}'
+
+# Flutter: size analysis
+[ "$MOBILE_ECOSYSTEM" = "flutter" ] && \
+  flutter build apk --analyze-size --target-platform android-arm64 2>/dev/null | tail -20
+```
+
+### Mobile Phase 2: Cold Startup Time
+
+```bash
+_BUNDLE=$(grep "bundle_id:" CLAUDE.md 2>/dev/null | cut -d: -f2 | tr -d ' ')
+_SIM=$(xcrun simctl list devices booted 2>/dev/null | grep "iPhone" | head -1 | grep -oE '[A-F0-9-]{36}')
+
+# iOS cold startup
+if [ -n "$_SIM" ] && [ -n "$_BUNDLE" ]; then
+  xcrun simctl terminate "$_SIM" "$_BUNDLE" 2>/dev/null
+  sleep 2
+  time xcrun simctl launch "$_SIM" "$_BUNDLE" 2>&1
+fi
+
+# Android cold startup
+if adb devices 2>/dev/null | grep -q "device$" && [ -n "$_BUNDLE" ]; then
+  adb shell am force-stop "$_BUNDLE" 2>/dev/null
+  sleep 2
+  adb shell am start-activity -W -n "${_BUNDLE}/.MainActivity" 2>/dev/null | \
+    grep -E "TotalTime|WaitTime|ThisTime"
+fi
+```
+
+### Mobile Phase 3: Memory Snapshot
+
+```bash
+_BUNDLE=$(grep "bundle_id:" CLAUDE.md 2>/dev/null | cut -d: -f2 | tr -d ' ')
+
+# Android foreground memory
+adb shell dumpsys meminfo "$_BUNDLE" 2>/dev/null | \
+  grep -E "TOTAL:|Dalvik Heap|Native Heap" | head -5
+
+# iOS: approximate via vmmap on simulator process (complex — report as manual step)
+echo "iOS memory: use Xcode Memory Gauge or run 'leaks <app-pid>' in Instruments"
+```
+
+### Mobile Performance Budget
+
+```
+MOBILE PERFORMANCE BUDGET
+═════════════════════════
+Metric              Budget      Actual      Status
+────────            ──────      ──────      ──────
+Cold startup        < 2s        ?s          -
+Warm startup        < 600ms     ?ms         -
+iOS IPA size        < 50MB      ?MB         -
+Android AAB size    < 30MB      ?MB         -
+Memory (fg)         < 150MB     ?MB         -
+Test suite          < 60s       ?s          -
+```
+
+Fill in actual values from the measurements above. Compare against prior baseline
+in `.gstack/benchmark-reports/mobile-baseline.json` if present.
+
+If any metric exceeds budget: flag as FAIL and recommend `/mobile-optimize --perf`
+for root cause analysis and remediation.
+
+---
 
 ## Important Rules
 

@@ -92,6 +92,41 @@ Continue to Step 1.5 — do NOT block or ask. Ship runs its own review in Step 3
 
 ## Step 1.5: Distribution Pipeline Check
 
+**Mobile distribution check (runs before artifact check):**
+
+{{MOBILE_DETECT}}
+
+If `MOBILE_ECOSYSTEM` is not `unknown`:
+
+```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
+# Check for mobile CI/CD pipeline
+ls .github/workflows/ 2>/dev/null | grep -iE "mobile|ios|android|flutter|expo|eas" | head -5
+grep -l "xcodebuild\|fastlane\|eas build\|flutter build" .github/workflows/*.yml .github/workflows/*.yaml 2>/dev/null | head -3
+ls fastlane/Fastfile 2>/dev/null && echo "FASTLANE:configured"
+ls eas.json 2>/dev/null && echo "EAS:configured"
+```
+
+If mobile ecosystem detected AND no mobile build pipeline found:
+Use AskUserQuestion:
+"This is a mobile project but no CI/CD pipeline for building binaries was found.
+Without one, you'll need to run `/mobile-ship` manually for every release.
+
+A) Set up basic mobile CI/CD now (I'll create `.github/workflows/mobile-ci.yml`)
+B) Use `/mobile-ship` manually — I'm OK with that
+C) I have a pipeline elsewhere (CI provider other than GitHub Actions)"
+
+If mobile project: also add a `## Mobile Build` section to the PR body in Step 8:
+```markdown
+## Mobile Build
+- [ ] iOS: [build passing / not tested / N/A]
+- [ ] Android: [build passing / not tested / N/A]
+- [ ] `/store-compliance`: [passed / not run]
+- [ ] `/mobile-ship` ready: [yes / pending compliance]
+```
+
+---
+
 If the diff introduces a new standalone artifact (CLI binary, library package, tool) — not a web
 service with existing deployment — verify that a distribution pipeline exists.
 
