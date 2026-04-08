@@ -1,0 +1,354 @@
+---
+name: store-compliance
+preamble-tier: 2
+version: 1.0.0
+description: |
+  App Store and Google Play compliance audit (2026 guidelines). Checks Apple
+  Guideline 2.5.2 (no dynamic code), 5.1.2 (AI data disclosure), Privacy Manifest,
+  WCAG 2.2 accessibility, permission usage descriptions, IAP requirements, and all
+  Google Play policies including targetSdkVersion, Data Safety, 64-bit requirements.
+  Produces a structured PASS/FAIL/NEEDS_REVIEW report with file:line evidence and
+  remediation steps. Auto-fixes simple issues. Runs before every App Store submission.
+  Use when: "store compliance", "app review ready", "check App Store guidelines",
+  "Play Store compliance", "ready to submit", "will Apple reject this".
+  Proactively suggest before any mobile release. (gstack)
+voice-triggers:
+  - "app store check"
+  - "compliance check"
+  - "review guidelines"
+  - "submission ready"
+allowed-tools:
+  - Bash
+  - Read
+  - Grep
+  - Glob
+  - Write
+  - Edit
+  - AskUserQuestion
+  - WebSearch
+---
+
+{{PREAMBLE}}
+
+# /store-compliance: App Store Compliance Audit
+
+You are an App Store compliance specialist. Your job is to identify every reason
+Apple or Google might reject this app, then fix what can be auto-fixed and surface
+what needs a human decision.
+
+**Iron Law: Never mark an item PASS if you can't verify it programmatically or
+through direct file reading. Use NEEDS_REVIEW for anything that requires manual
+confirmation in a store portal.**
+
+---
+
+## Step 0: Read the Checklist
+
+Read `.claude/skills/store-compliance/checklist.md`.
+
+If the file cannot be read, fall back to built-in knowledge for the 2026 checklist.
+
+---
+
+## Step 1: Ecosystem Detection
+
+{{MOBILE_DETECT}}
+
+If `MOBILE_ECOSYSTEM=unknown`:
+Output: "This doesn't appear to be a mobile project. `/store-compliance` requires a Swift, Kotlin, Flutter, or React Native/Expo project."
+Stop.
+
+---
+
+## Step 2: iOS Compliance Scan (skip if `MOBILE_HAS_IOS=false`)
+
+### 2.1 — Guideline 2.5.2: Dynamic Code Execution (BLOCKER)
+
+```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
+# Patterns that violate 2.5.2
+grep -rn "dlopen\|NSBundle.*load\|JSEvaluateScript\|evaluateJavaScript" \
+  --include="*.swift" --include="*.m" --include="*.mm" . 2>/dev/null | head -20
+
+# Custom OTA / hot-update patterns (non-Expo)
+grep -rn "CodePush\|hot.*update\|ota.*update\|dynamicLoad" \
+  --include="*.swift" --include="*.js" --include="*.ts" . 2>/dev/null | head -10
+```
+
+Flag any match as BLOCKER. Exception: `evaluateJavaScript` in a `WKWebView` loading
+from the app's own bundle is acceptable — flag for manual review, not auto-reject.
+
+### 2.2 — Privacy Manifest (BLOCKER for iOS 17+ submissions)
+
+```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
+# Check for PrivacyInfo.xcprivacy
+find . -name "PrivacyInfo.xcprivacy" 2>/dev/null | head -5
+
+# Check for Required Reason API usage (patterns that require manifest entries)
+grep -rn "UserDefaults\|NSUserDefaults" --include="*.swift" . 2>/dev/null | wc -l
+grep -rn "\.creationDate\|\.modificationDate\|attributesOfItem" --include="*.swift" . 2>/dev/null | wc -l
+grep -rn "volumeAvailableCapacity\|volumeTotalCapacity" --include="*.swift" . 2>/dev/null | wc -l
+```
+
+If `PrivacyInfo.xcprivacy` not found AND any Required Reason APIs are used → BLOCKER.
+AUTO-FIX: Create a minimal `PrivacyInfo.xcprivacy` template with the required categories.
+
+### 2.3 — Guideline 5.1.2: AI Data Disclosure (HIGH)
+
+```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
+# Check for AI SDK usage
+grep -rn "openai\|anthropic\|claude\|gemini\|gpt\|ChatGPT\|LLM\|llm" \
+  --include="*.swift" --include="*.js" --include="*.ts" --include="*.dart" \
+  . 2>/dev/null | grep -v "test\|spec\|__mocks__" | head -20
+```
+
+If AI usage found: flag as HIGH — requires disclosure in App Privacy section,
+Privacy Policy, and in-app before first AI interaction.
+
+### 2.4 — Guideline 5.1.1: Permission Usage Descriptions (HIGH)
+
+```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
+# Read Info.plist
+cat ios/*/Info.plist 2>/dev/null || find . -name "Info.plist" | head -3 | xargs cat 2>/dev/null
+
+# Cross-reference: what permissions does the code use?
+grep -rn "requestAccess\|requestAuthorization\|requestWhenInUse\|requestAlways\|AVCapture\|CLLocation\|CNContact\|PHPhoto\|HKHealth\|CBCentral\|requestPermissions" \
+  --include="*.swift" . 2>/dev/null | head -20
+```
+
+For each permission used in code, verify the corresponding `NSXxxUsageDescription` key
+exists in `Info.plist`. Missing keys → HIGH.
+AUTO-FIX: Add missing `NSXxxUsageDescription` keys with placeholder descriptions —
+then AskUserQuestion to get the real user-facing text.
+
+### 2.5 — Guideline 4.0: Accessibility (HIGH)
+
+```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
+# Check for accessibility labels on interactive views
+grep -rn "\.accessibilityLabel\|accessibilityIdentifier\|isAccessibilityElement" \
+  --include="*.swift" . 2>/dev/null | wc -l
+
+# Check for Dynamic Type support
+grep -rn "preferredFont\|scaledFont\|adjustsFontForContentSizeCategory\|UIFontMetrics" \
+  --include="*.swift" . 2>/dev/null | wc -l
+
+# Flag hardcoded font sizes (not using Dynamic Type)
+grep -rn "UIFont(name:.*size:\|UIFont.systemFont(ofSize:" --include="*.swift" . 2>/dev/null | head -10
+```
+
+Report count of accessibility labels and Dynamic Type usage. Flag hardcoded font sizes
+for manual review.
+
+### 2.6 — Guideline 3.1.1: In-App Purchase Requirement (HIGH if applicable)
+
+```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
+# Check for third-party payment SDKs handling digital goods
+grep -rn "Stripe\|Braintree\|PayPal\|Square\|RevenueCat.*purchase\|SKPayment" \
+  --include="*.swift" . 2>/dev/null | head -10
+```
+
+If third-party payment found: flag as HIGH — determine if it covers digital or physical goods.
+StoreKit / Apple IAP required for digital goods/subscriptions.
+
+### 2.7 — App Completeness (MEDIUM)
+
+```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
+# Check for placeholder content
+grep -rn "Lorem ipsum\|TODO\|FIXME\|placeholder\|stub screen" \
+  --include="*.swift" --include="*.storyboard" --include="*.xib" . 2>/dev/null | head -10
+```
+
+---
+
+## Step 3: Android / Google Play Scan (skip if `MOBILE_HAS_ANDROID=false`)
+
+### 3.1 — Target API Level (BLOCKER)
+
+```bash
+# Find build.gradle files with targetSdkVersion
+grep -rn "targetSdkVersion\|targetSdk" \
+  android/app/build.gradle android/app/build.gradle.kts \
+  build.gradle build.gradle.kts 2>/dev/null | head -5
+```
+
+If `targetSdkVersion < 35` → BLOCKER.
+AUTO-FIX: Update to `targetSdkVersion = 35` and `compileSdkVersion = 35`.
+
+### 3.2 — App Bundle Format (BLOCKER)
+
+```bash
+# Check that build produces .aab not .apk for store
+grep -rn "assembleRelease\|bundleRelease" \
+  android/app/build.gradle* Makefile Fastfile .github/workflows/ 2>/dev/null | head -5
+```
+
+If CI uses `assembleRelease` (produces `.apk`) instead of `bundleRelease` (produces `.aab`) → BLOCKER.
+AUTO-FIX: Update CI workflow to use `./gradlew bundleRelease`.
+
+### 3.3 — 64-bit Support (BLOCKER)
+
+```bash
+# Check for 32-bit only native libraries
+find android -name "*.so" -path "*/armeabi-v7a/*" 2>/dev/null | head -5
+find android -name "*.so" -path "*/x86/*" 2>/dev/null | head -5
+# Check ABI splits config
+grep -rn "abiFilters\|splits.*abi" android/app/build.gradle* 2>/dev/null | head -5
+```
+
+If `armeabi-v7a` or `x86` only libraries found with no 64-bit equivalent → BLOCKER.
+
+### 3.4 — Data Safety Permissions (HIGH)
+
+```bash
+# Read AndroidManifest.xml for dangerous permissions
+grep -n "uses-permission" android/app/src/main/AndroidManifest.xml 2>/dev/null | head -30
+```
+
+List all declared permissions. For each DANGEROUS permission (CAMERA, RECORD_AUDIO,
+ACCESS_FINE_LOCATION, READ_CONTACTS, etc.), flag as NEEDS_REVIEW — must be declared
+in Play Console Data Safety form.
+
+### 3.5 — Accessibility: contentDescription (HIGH)
+
+```bash
+# Check layout XML files for ImageView/ImageButton without contentDescription
+grep -rn "<ImageView\|<ImageButton\|<FloatingActionButton" \
+  android/app/src/main/res/layout/ 2>/dev/null | \
+  grep -v "contentDescription" | head -10
+
+# Check text sizes in sp vs dp/px
+grep -rn 'textSize="[0-9]*dp\|textSize="[0-9]*px' \
+  android/app/src/main/res/ 2>/dev/null | head -10
+```
+
+Missing `contentDescription` on image elements → HIGH.
+Hardcoded text sizes in `dp` or `px` → MEDIUM (should be `sp`).
+AUTO-FIX for `sp` unit conversion where safe to do so.
+
+### 3.6 — AI Data Disclosure (HIGH)
+
+Same AI SDK detection as iOS Step 2.3. If found, flag for Data Safety form update
+and in-app disclosure.
+
+---
+
+## Step 4: Cross-Platform Extras
+
+**Flutter:**
+```bash
+# Check for deprecated flutter_driver (should use integration_test)
+grep -rn "flutter_driver" pubspec.yaml pubspec.lock 2>/dev/null | head -5
+
+# Check for outdated dependencies
+flutter pub outdated 2>/dev/null | head -20
+```
+
+**React Native / Expo:**
+```bash
+# Run expo doctor
+npx expo-doctor 2>/dev/null | head -30
+
+# Check SDK version
+grep '"sdkVersion"\|"expo":' app.json app.config.js 2>/dev/null | head -5
+```
+
+**Both:**
+```bash
+# Check for Privacy Policy URL
+grep -rn "privacyPolicyURL\|privacy_policy\|privacyPolicy" \
+  ios/*/Info.plist android/app/src/main/AndroidManifest.xml \
+  app.json app.config.js 2>/dev/null | head -5
+```
+
+---
+
+## Step 5: Auto-Fix Simple Issues
+
+Apply these fixes automatically (do not ask):
+
+1. **Missing `NSUsageDescription` keys** in `Info.plist` — add with placeholder text
+2. **`targetSdkVersion < 35`** in `build.gradle` — bump to 35
+3. **CI using `assembleRelease`** — update to `bundleRelease`
+4. **Missing `PrivacyInfo.xcprivacy`** — create minimal template
+5. **Text sizes in `dp`/`px`** in Android layouts — convert to `sp`
+
+Commit auto-fixes atomically: `fix(compliance): auto-fix store compliance issues`
+
+---
+
+## Step 6: Batch Product Decisions
+
+For findings that require human judgment (IAP vs third-party payment, AI disclosure wording,
+content rating, subscription terms), use a **single** AskUserQuestion listing all decisions:
+
+"The compliance scan found X items requiring your input:
+
+1. [DECISION 1]: [context] — what would you like to do?
+2. [DECISION 2]: [context] — ...
+
+For each: A) I'll handle it manually  B) Skip for now (add to TODOS.md)  C) [specific action]"
+
+---
+
+## Step 7: Compliance Report
+
+Write report to `.gstack/compliance-reports/{YYYY-MM-DD}-compliance.json`:
+
+```json
+{
+  "date": "<date>",
+  "ecosystem": "<ecosystem>",
+  "summary": {
+    "blockers": N,
+    "high": N,
+    "medium": N,
+    "needs_review": N,
+    "auto_fixed": N,
+    "passed": N
+  },
+  "findings": [
+    {
+      "id": "ios-2.5.2",
+      "severity": "BLOCKER",
+      "status": "PASS|FAIL|NEEDS_REVIEW|AUTO_FIXED",
+      "guideline": "Apple 2.5.2",
+      "title": "Dynamic Code Execution",
+      "evidence": "file:line reference or 'no matches found'",
+      "remediation": "..."
+    }
+  ]
+}
+```
+
+Also write a human-readable summary to stdout:
+
+```
+╔══════════════════════════════════════════╗
+║   STORE COMPLIANCE REPORT — YYYY-MM-DD  ║
+╠══════════════════════════════════════════╣
+║  🚫 BLOCKERS:      N  (must fix now)     ║
+║  ⚠️  HIGH:         N  (fix before ship)  ║
+║  💛 MEDIUM:        N  (fix this sprint)  ║
+║  🔍 NEEDS REVIEW:  N  (manual check)     ║
+║  ✅ AUTO-FIXED:    N                     ║
+║  ✅ PASSED:        N                     ║
+╚══════════════════════════════════════════╝
+
+BLOCKERS (must fix before submission):
+  [1] iOS 2.5.2 — Dynamic Code Execution
+      Found: path/to/file.swift:42: dlopen(...)
+      Fix: Remove dynamic code loading
+
+...
+```
+
+**If any BLOCKERs remain after auto-fix**: do NOT proceed to `/mobile-ship`. Resolve
+all BLOCKERs first.
+
+**If zero BLOCKERs**: compliance report is valid for 7 days for use by `/mobile-ship`.
