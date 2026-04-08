@@ -1,0 +1,300 @@
+---
+name: mobile-init
+preamble-tier: 2
+version: 1.0.0
+description: |
+  Scaffold a new mobile app project with production-grade structure, CI/CD, and
+  testing setup. Supports Swift/iOS, Kotlin/Android, Flutter, and React Native/Expo.
+  Generates architecture directories, environment configs, testing frameworks, and
+  GitHub Actions CI. Persists project config to CLAUDE.md for downstream skills.
+  Use when asked to "create a new mobile app", "scaffold mobile project", "new iOS app",
+  "new Android app", "new Flutter app", "new React Native app", "new Expo app".
+  Proactively invoke when the user says they're starting a new mobile project. (gstack)
+voice-triggers:
+  - "new mobile app"
+  - "create app"
+  - "scaffold app"
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Edit
+  - AskUserQuestion
+  - WebSearch
+---
+
+{{PREAMBLE}}
+
+# /mobile-init: Scaffold a Production-Ready Mobile App
+
+You are setting up a new mobile project from scratch. This creates the full
+scaffold — architecture, testing, CI/CD, environments — so the user starts
+with a clean, well-structured baseline rather than the minimal framework default.
+
+---
+
+## Step 1: Gather Parameters
+
+Use AskUserQuestion to collect:
+
+1. **Ecosystem** — which framework?
+   - A) Swift / iOS (native Apple)
+   - B) Kotlin / Android (native Android)
+   - C) Flutter (cross-platform)
+   - D) React Native (cross-platform, bare workflow)
+   - E) Expo (cross-platform, managed workflow — recommended for new projects)
+
+2. **App name** — e.g., `MyApp`
+
+3. **Bundle ID / Package name** — e.g., `com.company.myapp`
+
+4. **Minimum OS target**:
+   - iOS: default iOS 16.0 (covers ~95% of devices as of 2026)
+   - Android: default API 24 / Android 7.0 (covers ~98% of devices as of 2026)
+
+5. **CI/CD** — set up GitHub Actions pipeline? (default: yes)
+
+---
+
+## Step 2: Scaffold via Canonical Tool
+
+Run the canonical scaffolding command for the chosen ecosystem.
+
+**A) Swift/iOS:**
+```bash
+# Verify Xcode is installed
+xcrun xcode-select -p 2>/dev/null || echo "XCODE_MISSING"
+# Create a Swift Package (for libraries) or guide through Xcode project
+# For an app target, we scaffold the structure and let Xcode handle the .xcodeproj
+mkdir -p <appname>/{Sources,Tests,Resources}
+swift package init --name <AppName> --type executable 2>/dev/null || true
+```
+Then create `Package.swift` with iOS platform target, `Sources/<AppName>/App.swift` with SwiftUI `@main`, and `Tests/<AppName>Tests/`.
+
+**B) Kotlin/Android:**
+```bash
+# Verify Android SDK
+android --version 2>/dev/null || sdkmanager --version 2>/dev/null || echo "ANDROID_SDK_CHECK_MANUAL"
+mkdir -p <appname>
+cd <appname>
+# Scaffold Gradle structure
+gradle init --type basic --dsl kotlin 2>/dev/null || true
+```
+Create `app/build.gradle.kts` with `com.android.application` plugin, `settings.gradle.kts`, `app/src/main/AndroidManifest.xml`, and standard Jetpack Compose setup.
+
+**C) Flutter:**
+```bash
+flutter create \
+  --org <bundle_id_prefix> \
+  --project-name <app_name_snake> \
+  --platforms ios,android \
+  --template app \
+  <AppName>
+cd <AppName>
+flutter pub get
+```
+
+**D) React Native (bare):**
+```bash
+npx @react-native-community/cli@latest init <AppName> \
+  --pm npm \
+  --skip-install
+cd <AppName>
+npm install
+```
+
+**E) Expo (managed):**
+```bash
+npx create-expo-app@latest <AppName> \
+  --template blank-typescript
+cd <AppName>
+npm install
+```
+
+---
+
+## Step 3: Apply Opinionated Project Structure
+
+After scaffolding, add these directories and files regardless of ecosystem:
+
+**Architecture directories:**
+```bash
+mkdir -p src/{features,shared,data,presentation}
+# Or for Flutter:
+mkdir -p lib/{features,shared,data,presentation}
+```
+
+**Environment configuration:**
+```bash
+# Create .env files (never committed — add to .gitignore)
+touch .env.development .env.staging .env.production
+```
+
+**Add to .gitignore:**
+- `.env.development`, `.env.staging`, `.env.production`
+- iOS: `DerivedData/`, `*.xcuserstate`, `Pods/` (if CocoaPods)
+- Android: `.gradle/`, `build/`, `local.properties`, `*.keystore`, `*.jks`
+- Flutter: `.dart_tool/`, `build/`
+- RN/Expo: `node_modules/`, `.expo/`, `android/build/`, `ios/build/`
+
+---
+
+## Step 4: Add Testing Infrastructure
+
+**A) Swift/iOS — XCTest + SnapshotTesting:**
+```swift
+// Package.swift: add test target
+.testTarget(
+    name: "<AppName>Tests",
+    dependencies: [
+        "<AppName>",
+        .product(name: "SnapshotTesting", package: "swift-snapshot-testing")
+    ]
+)
+```
+Create `Tests/<AppName>Tests/<AppName>Tests.swift` with a passing placeholder test.
+
+**B) Kotlin/Android — JUnit5 + Espresso:**
+Add to `app/build.gradle.kts`:
+```kotlin
+testImplementation("org.junit.jupiter:junit-jupiter:5.10.0")
+androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+androidTestImplementation("androidx.test.ext:junit:1.1.5")
+```
+
+**C) Flutter — flutter_test + golden_toolkit:**
+```bash
+flutter pub add --dev golden_toolkit flutter_test
+```
+Create `test/widget_test.dart` with a passing placeholder test.
+
+**D) React Native / Expo — Jest + React Native Testing Library + Detox:**
+```bash
+npm install --save-dev @testing-library/react-native detox jest
+```
+Create `__tests__/App.test.tsx` with a passing placeholder test.
+
+---
+
+## Step 5: Generate CI/CD Workflow
+
+Create `.github/workflows/mobile-ci.yml` for the detected ecosystem:
+
+**Flutter CI:**
+```yaml
+name: Mobile CI
+on: [push, pull_request]
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 'stable'
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build apk --debug
+```
+
+**Expo CI:**
+```yaml
+name: Mobile CI
+on: [push, pull_request]
+jobs:
+  expo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx jest --passWithNoTests
+```
+
+**Swift CI:**
+```yaml
+name: Mobile CI
+on: [push, pull_request]
+jobs:
+  ios:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          xcodebuild test \
+            -scheme <AppName> \
+            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            2>&1 | xcpretty || true
+```
+
+**Kotlin CI:**
+```yaml
+name: Mobile CI
+on: [push, pull_request]
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { java-version: '17', distribution: 'temurin' }
+      - run: ./gradlew test
+      - run: ./gradlew lint
+      - run: ./gradlew bundleDebug
+```
+
+---
+
+## Step 6: Persist Mobile Stack Config to CLAUDE.md
+
+Add or update the `## Mobile Stack` section in `CLAUDE.md`:
+
+```markdown
+## Mobile Stack
+
+- ecosystem: <detected>
+- has_ios: <true|false>
+- has_android: <true|false>
+- test: <test command>
+- build_ios: <ios build command or N/A>
+- build_android: <android build command or N/A>
+- analyze: <analyze command>
+- bundle_id: <bundle_id>
+- min_ios: <version or N/A>
+- min_android: <api_level or N/A>
+```
+
+---
+
+## Step 7: Initial Commit
+
+Stage all scaffold files (explicitly — never `git add .`):
+
+```bash
+git init 2>/dev/null || true
+git add CLAUDE.md .github/ src/ lib/ pubspec.yaml package.json \
+        build.gradle.kts settings.gradle.kts \
+        Package.swift app.json eas.json \
+        .gitignore .env.development .env.staging .env.production 2>/dev/null || true
+git commit -m "chore: scaffold <ecosystem> mobile project with CI/CD and testing"
+```
+
+---
+
+## Completion Checklist
+
+- [ ] Ecosystem scaffolded with canonical tool
+- [ ] Architecture directories created (`features/`, `shared/`, `data/`, `presentation/`)
+- [ ] Environment files added + gitignored
+- [ ] Testing framework added with one passing placeholder test
+- [ ] CI/CD workflow written to `.github/workflows/mobile-ci.yml`
+- [ ] `CLAUDE.md ## Mobile Stack` section populated
+- [ ] Initial commit created
+
+**Next steps to suggest:**
+- Run `/store-compliance` before first App Store / Play Store submission
+- Run `/mobile-ship` when ready to release a binary
+- Run `/qa` to test the app on a simulator

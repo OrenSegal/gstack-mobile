@@ -1,0 +1,268 @@
+---
+name: mobile-optimize
+preamble-tier: 1
+version: 1.0.0
+description: |
+  Mobile app optimization in two modes: ASO (App Store Optimization — keywords,
+  metadata, screenshots, competitive positioning) and Performance (startup time,
+  binary size, memory, battery usage). Default runs both. Each mode produces
+  prioritized recommendations with AUTO-FIX for non-content changes.
+  Use when: "optimize app", "ASO", "app store optimization", "app too slow",
+  "reduce app size", "battery optimization", "startup time", "improve ranking",
+  "increase downloads", "app store visibility".
+  Proactively suggest after stable release once metrics are available. (gstack)
+voice-triggers:
+  - "app store optimization"
+  - "app performance"
+  - "optimize store listing"
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - AskUserQuestion
+  - WebSearch
+---
+
+{{PREAMBLE}}
+
+# /mobile-optimize: ASO + Performance Optimization
+
+Two modes: `--aso` for store listing optimization, `--perf` for runtime performance.
+Default (no flag): run both.
+
+**Parse the user's request:**
+- "ASO" / "app store optimization" / "ranking" / "keywords" → ASO mode only
+- "slow" / "startup" / "battery" / "size" / "memory" → Perf mode only
+- "optimize" / no qualifier → both modes
+
+---
+
+## Setup
+
+{{MOBILE_DETECT}}
+
+If `MOBILE_ECOSYSTEM=unknown`: output "This doesn't appear to be a mobile project."
+and stop.
+
+---
+
+# Part A: ASO (App Store Optimization)
+
+## A1: Read Current Metadata
+
+```bash
+# iOS: Fastlane metadata
+ls fastlane/metadata/en-US/ 2>/dev/null
+cat fastlane/metadata/en-US/name.txt 2>/dev/null
+cat fastlane/metadata/en-US/subtitle.txt 2>/dev/null
+cat fastlane/metadata/en-US/keywords.txt 2>/dev/null
+cat fastlane/metadata/en-US/description.txt 2>/dev/null
+ls fastlane/screenshots/ 2>/dev/null
+
+# Android: Fastlane metadata
+ls fastlane/metadata/android/en-US/ 2>/dev/null
+cat fastlane/metadata/android/en-US/title.txt 2>/dev/null
+cat fastlane/metadata/android/en-US/short_description.txt 2>/dev/null
+cat fastlane/metadata/android/en-US/full_description.txt 2>/dev/null
+ls fastlane/metadata/android/en-US/images/ 2>/dev/null
+
+# Expo
+grep '"name"\|"description"\|"slug"' app.json 2>/dev/null | head -5
+```
+
+If no metadata files found: note that ASO metadata isn't tracked in the repo yet.
+Offer to create `fastlane/metadata/` structure.
+
+## A2: Competitive Keyword Research
+
+Use WebSearch for:
+1. `"<app category> app store keywords 2026"` — find high-volume keywords
+2. `"<app name> competitor" site:apps.apple.com OR site:play.google.com` — find top 3 competitors
+3. For each competitor found, search `"<competitor app> keywords"` — identify their strategy
+
+Report: top 10 candidate keywords with estimated relevance (high/medium/low) for the app.
+
+## A3: Metadata Audit
+
+Check against 2026 guidelines:
+
+**iOS:**
+- Title: ≤30 chars (AUTO-FIX: trim to limit) — include primary keyword
+- Subtitle: ≤30 chars — secondary keyword opportunity (often missed)
+- Keywords field: ≤100 chars, comma-separated, no spaces after commas (AUTO-FIX formatting)
+- Description: first 3 lines appear before "more" fold — most valuable real estate
+- Does description front-load the value prop? Or bury it in the 4th paragraph?
+
+**Android:**
+- Title: ≤50 chars — include primary keyword (more space than iOS)
+- Short description: ≤80 chars — appears on search results, crucial for CTR
+- Full description: first 167 chars appear above fold
+
+**Screenshots (both platforms):**
+- Count: iOS supports up to 10 per device size; Android up to 8
+- First screenshot: does it communicate the core value prop?
+- Text overlays: are screenshots "annotated" to show features? (Higher conversion)
+- Device frames: framed screenshots convert better
+- Portrait vs landscape: verify orientation matches app
+
+## A4: ASO Recommendations
+
+Produce prioritized list:
+
+```
+ASO OPTIMIZATION REPORT
+══════════════════════
+HIGH IMPACT (implement this sprint):
+  [1] Add subtitle — currently empty, wastes 30 chars of keyword real estate
+      Suggested: "<key benefit> · <secondary keyword>"
+  [2] Keyword field gaps — missing high-volume terms: X, Y, Z
+      Current keywords (87/100 chars): ...
+      Suggested keywords: (optimized for volume + relevance)
+
+MEDIUM IMPACT:
+  [3] First screenshot doesn't show the main feature — [description of what to change]
+  [4] Description buries value prop — move paragraph 4 to paragraph 1
+
+AUTO-FIXED:
+  ✅ Keyword formatting: removed spaces after commas
+  ✅ Title trimmed to 30 chars
+```
+
+AUTO-FIX formatting issues. ASK for content changes via AskUserQuestion.
+
+---
+
+# Part B: Performance Optimization
+
+## B1: Binary Size Analysis
+
+```bash
+# iOS: IPA size
+find . -name "*.ipa" 2>/dev/null | xargs -I{} sh -c 'echo "IPA: {}"; ls -lh {}'
+
+# iOS: framework breakdown
+find . -name "*.ipa" 2>/dev/null | head -1 | xargs -I{} sh -c \
+  'unzip -l {} 2>/dev/null | grep -E "\.framework|\.dylib|Assets" | sort -k3 -rn | head -20'
+
+# Android: AAB size
+find . -name "*.aab" 2>/dev/null | xargs -I{} sh -c 'echo "AAB: {}"; ls -lh {}'
+
+# Flutter: analyze size
+[ "$MOBILE_ECOSYSTEM" = "flutter" ] && \
+  flutter build apk --analyze-size --target-platform android-arm64 2>/dev/null | tail -30
+
+# React Native: bundle size
+[ "$MOBILE_ECOSYSTEM" = "react-native" ] || [ "$MOBILE_ECOSYSTEM" = "expo" ] && \
+  npx react-native bundle --entry-file index.js --bundle-output /tmp/bundle.js \
+    --platform android 2>/dev/null && ls -lh /tmp/bundle.js 2>/dev/null
+```
+
+**Targets:**
+- iOS IPA: <50MB (downloads require Wi-Fi above 200MB per carrier limit; app installs above 4GB are rejected)
+- Android AAB: <30MB baseline (app modules can be deferred via Play Feature Delivery)
+
+## B2: Cold Startup Time
+
+```bash
+# iOS: measure via simctl
+_BUNDLE=$(grep "bundle_id:" CLAUDE.md 2>/dev/null | cut -d: -f2 | tr -d ' ')
+_SIM=$(xcrun simctl list devices booted 2>/dev/null | grep "iPhone" | head -1 | grep -oE '[A-F0-9-]{36}')
+if [ -n "$_SIM" ] && [ -n "$_BUNDLE" ]; then
+  xcrun simctl terminate "$_SIM" "$_BUNDLE" 2>/dev/null
+  xcrun simctl launch --console "$_SIM" "$_BUNDLE" 2>&1 | head -20
+fi
+
+# Android: measure via adb
+_PKG=$(grep "bundle_id:" CLAUDE.md 2>/dev/null | cut -d: -f2 | tr -d ' ')
+if adb devices 2>/dev/null | grep -q "device$"; then
+  adb shell am force-stop "$_PKG" 2>/dev/null
+  adb shell am start-activity -W -n "${_PKG}/.MainActivity" 2>/dev/null | \
+    grep -E "TotalTime|WaitTime|ThisTime"
+fi
+
+# Flutter
+[ "$MOBILE_ECOSYSTEM" = "flutter" ] && \
+  echo "Run: flutter run --profile and enable performance overlay in DevTools"
+```
+
+**Targets:**
+- Cold launch <2s (OS kills apps that don't render in 20s; App Store measures perception)
+- Android TotalTime <1000ms (Play Store "cold start bad behavior" = >5000ms)
+
+## B3: Memory and Battery
+
+```bash
+# Android memory snapshot
+_PKG=$(grep "bundle_id:" CLAUDE.md 2>/dev/null | cut -d: -f2 | tr -d ' ')
+adb shell dumpsys meminfo "$_PKG" 2>/dev/null | grep -E "TOTAL|Dalvik|Native|Other" | head -10
+
+# Android battery stats (run after 5 minutes of app use)
+adb shell dumpsys batterystats --reset 2>/dev/null
+echo "Use the app for 5 minutes, then run:"
+echo "  adb shell dumpsys batterystats $_PKG | grep -E 'Computed drain|wake_lock|running'"
+
+# Check for common battery drain patterns
+grep -rn "Timer\|RunLoop\|DispatchQueue.main.asyncAfter\|setInterval\|NSTimer" \
+  --include="*.swift" --include="*.kt" --include="*.dart" --include="*.ts" \
+  . 2>/dev/null | grep -v "test\|spec" | head -10
+```
+
+## B4: Code-Level Optimizations
+
+```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
+# Swift: check for known performance anti-patterns
+# - Force cast on hot paths
+grep -rn " as! " --include="*.swift" . 2>/dev/null | grep -v "test\|Test" | head -10
+# - Main thread dispatch for UI already on main thread (noop overhead)
+grep -rn "DispatchQueue.main.async" --include="*.swift" . 2>/dev/null | head -5
+
+# Kotlin: check for common leaks
+# - Context stored in companion/static
+grep -rn "companion object.*Context\|object.*Context\|static.*Context" \
+  --include="*.kt" . 2>/dev/null | head -5
+# - Missing weak reference in coroutine callbacks
+grep -rn "GlobalScope\|runBlocking" --include="*.kt" . 2>/dev/null | head -5
+
+# Flutter: check for build method anti-patterns
+grep -rn "\.then\|await.*build\|setState.*heavy" --include="*.dart" . 2>/dev/null | head -5
+
+# RN: check for FlatList missing keyExtractor
+grep -rn "<FlatList" --include="*.tsx" --include="*.jsx" . 2>/dev/null | head -5
+grep -rn "keyExtractor" --include="*.tsx" --include="*.jsx" . 2>/dev/null | head -5
+```
+
+## B5: Performance Report
+
+```
+PERFORMANCE OPTIMIZATION REPORT
+═══════════════════════════════
+
+BINARY SIZE
+  iOS IPA:         XX MB  [TARGET: <50MB] ✅/⚠️/❌
+  Android AAB:     XX MB  [TARGET: <30MB] ✅/⚠️/❌
+  Largest frameworks: ...
+
+STARTUP TIME
+  iOS cold launch: X.Xs   [TARGET: <2s]  ✅/⚠️/❌
+  Android TotalTime: Xms  [TARGET: <1s]  ✅/⚠️/❌
+
+MEMORY
+  Android foreground: XX MB [TARGET: <150MB] ✅/⚠️/❌
+
+RECOMMENDATIONS (prioritized)
+  HIGH: [recommendation with file:line evidence]
+  MEDIUM: [recommendation]
+  LOW: [recommendation]
+```
+
+---
+
+## Final Output
+
+Combine ASO and Perf reports (if both modes run). Write to
+`.gstack/optimize-reports/{YYYY-MM-DD}-mobile-optimize.md`.
+
+AUTO-FIX changes commit: `perf(mobile): apply automated optimization fixes`
