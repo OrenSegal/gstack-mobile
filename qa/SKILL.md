@@ -644,7 +644,120 @@ RECOMMENDATION: Choose A because uncommitted work should be preserved as a commi
 
 After the user chooses, execute their choice (commit or stash), then continue with setup.
 
-**Find the browse binary:**
+**Detect mobile ecosystem (before browser setup):**
+
+## Mobile Ecosystem Detection
+
+Run this detection block to determine the project's mobile ecosystem. Read
+`CLAUDE.md` first — if a `## Mobile Stack` section exists with an
+`ecosystem:` entry, use those cached values and skip the rest of detection.
+
+```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
+
+# 1. Read cached values from CLAUDE.md first
+_MOBILE=$(grep -A1 "## Mobile Stack" CLAUDE.md 2>/dev/null | grep "ecosystem:" | cut -d: -f2 | tr -d ' ')
+_HAS_IOS=$(grep -A5 "## Mobile Stack" CLAUDE.md 2>/dev/null | grep "has_ios:" | cut -d: -f2 | tr -d ' ')
+_HAS_ANDROID=$(grep -A5 "## Mobile Stack" CLAUDE.md 2>/dev/null | grep "has_android:" | cut -d: -f2 | tr -d ' ')
+
+# 2. Auto-detect if no cached values
+if [ -z "$_MOBILE" ] || [ "$_MOBILE" = "unknown" ]; then
+  _MOBILE="unknown"
+  # Flutter: pubspec.yaml with flutter dependency
+  [ -f pubspec.yaml ] && grep -q "flutter:" pubspec.yaml 2>/dev/null && _MOBILE="flutter"
+  # Expo: package.json with expo dependency (check before react-native)
+  [ "$_MOBILE" = "unknown" ] && [ -f package.json ] && grep -q '"expo"' package.json 2>/dev/null && _MOBILE="expo"
+  [ "$_MOBILE" = "unknown" ] && [ -f eas.json ] && _MOBILE="expo"
+  # React Native: package.json with react-native (but not expo)
+  [ "$_MOBILE" = "unknown" ] && [ -f package.json ] && grep -q '"react-native"' package.json 2>/dev/null && _MOBILE="react-native"
+  # Swift/iOS: .xcodeproj or .xcworkspace at root or in ios/ subdir
+  [ "$_MOBILE" = "unknown" ] && ls *.xcodeproj *.xcworkspace 2>/dev/null | grep -q . && _MOBILE="swift"
+  [ "$_MOBILE" = "unknown" ] && ls ios/*.xcodeproj ios/*.xcworkspace 2>/dev/null | grep -q . && _MOBILE="react-native"
+  # Kotlin/Android: android/app/build.gradle or root build.gradle with android block
+  [ "$_MOBILE" = "unknown" ] && [ -f android/app/build.gradle ] && _MOBILE="kotlin"
+  [ "$_MOBILE" = "unknown" ] && [ -f app/build.gradle ] && _MOBILE="kotlin"
+fi
+
+# 3. Platform presence — independent of ecosystem
+_HAS_IOS="${_HAS_IOS:-false}"
+_HAS_ANDROID="${_HAS_ANDROID:-false}"
+ls *.xcodeproj *.xcworkspace 2>/dev/null | grep -q . && _HAS_IOS="true"
+[ -f ios/Podfile ] && _HAS_IOS="true"
+[ -d ios ] && ls ios/*.xcodeproj ios/*.xcworkspace 2>/dev/null | grep -q . && _HAS_IOS="true"
+[ -f android/app/build.gradle ] && _HAS_ANDROID="true"
+[ -d android ] && _HAS_ANDROID="true"
+[ "$_MOBILE" = "kotlin" ] && _HAS_ANDROID="true"
+[ "$_MOBILE" = "swift" ] && _HAS_IOS="true"
+
+# 4. Ecosystem-specific commands
+case "$_MOBILE" in
+  flutter)
+    _TEST_CMD="flutter test"
+    _BUILD_CMD="flutter build appbundle --release"
+    _ANALYZE_CMD="flutter analyze"
+    ;;
+  expo)
+    _TEST_CMD="npx jest"
+    _BUILD_CMD="eas build --platform all --profile production"
+    _ANALYZE_CMD="expo doctor && npx tsc --noEmit 2>/dev/null || true"
+    ;;
+  react-native)
+    _TEST_CMD="npx jest"
+    _BUILD_CMD="npx react-native build-android --mode release"
+    _ANALYZE_CMD="npx tsc --noEmit"
+    ;;
+  swift)
+    _SCHEME=$(ls *.xcodeproj 2>/dev/null | head -1 | sed 's/.xcodeproj//')
+    _TEST_CMD="xcodebuild test -scheme ${_SCHEME:-App} -destination 'platform=iOS Simulator,name=iPhone 16' 2>&1 | tail -30"
+    _BUILD_CMD="xcodebuild archive -scheme ${_SCHEME:-App} -archivePath /tmp/${_SCHEME:-App}.xcarchive 2>&1 | tail -20"
+    _ANALYZE_CMD="xcodebuild analyze -scheme ${_SCHEME:-App} 2>&1 | grep -E 'warning|error' | head -20"
+    ;;
+  kotlin)
+    _TEST_CMD="./gradlew test"
+    _BUILD_CMD="./gradlew bundleRelease"
+    _ANALYZE_CMD="./gradlew lint"
+    ;;
+  *)
+    _TEST_CMD="echo 'MOBILE_ECOSYSTEM=unknown: no mobile test command'"
+    _BUILD_CMD="echo 'MOBILE_ECOSYSTEM=unknown: no mobile build command'"
+    _ANALYZE_CMD="echo 'MOBILE_ECOSYSTEM=unknown: no mobile analyze command'"
+    ;;
+esac
+
+echo "MOBILE_ECOSYSTEM: $_MOBILE"
+echo "MOBILE_HAS_IOS: $_HAS_IOS"
+echo "MOBILE_HAS_ANDROID: $_HAS_ANDROID"
+echo "MOBILE_TEST_CMD: $_TEST_CMD"
+echo "MOBILE_BUILD_CMD: $_BUILD_CMD"
+echo "MOBILE_ANALYZE_CMD: $_ANALYZE_CMD"
+```
+
+**If `MOBILE_ECOSYSTEM=unknown`:** The project is not a recognized mobile app.
+Mobile-specific steps below do not apply — proceed with web/generic workflow.
+
+**On first successful detection**, persist to `CLAUDE.md` under a
+`## Mobile Stack` section (create if absent):
+
+```markdown
+## Mobile Stack
+
+- ecosystem: <detected value>
+- has_ios: <true|false>
+- has_android: <true|false>
+- test: <test command>
+- build_android: <android build command>
+- build_ios: <ios build command>
+- analyze: <analyze command>
+- bundle_id: (fill in: e.g. com.company.appname)
+- min_ios: (fill in: e.g. 16.0)
+- min_android: (fill in: e.g. 24)
+```
+
+**If `MOBILE_ECOSYSTEM` is not `unknown`:** This is a mobile app. Skip browser-based
+QA (Phases 1-6 below use simulator/emulator instead of `$B`). Proceed to the
+**Mobile QA** section after setup.
+
+**Find the browse binary (web QA only — skip for pure mobile projects):**
 
 ## SETUP (run this check BEFORE any browse command)
 
@@ -681,6 +794,49 @@ If `NEEDS_SETUP`:
      rm "$tmpfile"
    fi
    ```
+
+**Boot simulator / emulator (mobile QA):**
+
+## Simulator / Emulator Setup
+
+```bash
+_MOBILE=$(grep -A1 "## Mobile Stack" CLAUDE.md 2>/dev/null | grep "ecosystem:" | cut -d: -f2 | tr -d ' ')
+_MOBILE="${_MOBILE:-unknown}"
+
+if [ "$_MOBILE" = "swift" ] || [ "$_MOBILE" = "expo" ] || [ "$_MOBILE" = "react-native" ] || [ "$_MOBILE" = "flutter" ]; then
+  # iOS: boot the most recent iPhone simulator if none is running
+  _BOOTED=$(xcrun simctl list devices booted 2>/dev/null | grep "iPhone" | head -1)
+  if [ -z "$_BOOTED" ]; then
+    echo "Booting iPhone 16 simulator..."
+    xcrun simctl boot "iPhone 16" 2>/dev/null || xcrun simctl boot "iPhone 15" 2>/dev/null || true
+    sleep 5
+  fi
+  SIMULATOR_ID=$(xcrun simctl list devices booted 2>/dev/null | grep "iPhone" | head -1 | grep -oE '[A-F0-9-]{36}')
+  echo "IOS_SIMULATOR_ID: $SIMULATOR_ID"
+fi
+
+if [ "$_MOBILE" = "kotlin" ] || [ "$_MOBILE" = "expo" ] || [ "$_MOBILE" = "react-native" ] || [ "$_MOBILE" = "flutter" ]; then
+  # Android: check for running emulator or start one
+  _ADB_DEVICES=$(adb devices 2>/dev/null | grep "emulator" | head -1)
+  if [ -z "$_ADB_DEVICES" ]; then
+    _AVD=$(avdmanager list avd 2>/dev/null | grep "Name:" | tail -1 | awk '{print $2}')
+    if [ -n "$_AVD" ]; then
+      echo "Starting Android emulator: $_AVD"
+      emulator -avd "$_AVD" -no-snapshot -no-audio -no-window &
+      sleep 15
+      adb wait-for-device
+    else
+      echo "ANDROID_EMULATOR_UNAVAILABLE: no AVD found — skipping Android simulator tests"
+    fi
+  fi
+  _ADB_ID=$(adb devices 2>/dev/null | grep "emulator" | head -1 | awk '{print $1}')
+  echo "ANDROID_DEVICE_ID: $_ADB_ID"
+fi
+```
+
+**If simulator/emulator tools are unavailable** (xcrun/adb not found):
+Skip simulator-based testing and note in the QA report:
+"Simulator testing skipped — Xcode / Android SDK not found on this machine."
 
 **Check test framework (bootstrap if needed):**
 
@@ -1183,6 +1339,157 @@ Record baseline health score at end of Phase 6.
 
 ---
 
+## Mobile QA Phases (use when `MOBILE_ECOSYSTEM` is detected)
+
+Run these phases **instead of** the browser-based Phases 1-6 when `MOBILE_ECOSYSTEM` is not `unknown`.
+
+### Mobile Phase 1: Build and Install
+
+```bash
+# Flutter
+[ "$MOBILE_ECOSYSTEM" = "flutter" ] && flutter build apk --debug 2>&1 | tail -20
+[ "$MOBILE_ECOSYSTEM" = "flutter" ] && flutter install 2>&1 | tail -10
+
+# Expo / React Native — build dev client
+[ "$MOBILE_ECOSYSTEM" = "expo" ] && npx expo start --no-dev --minify &
+[ "$MOBILE_ECOSYSTEM" = "react-native" ] && npx react-native run-android --mode debug 2>&1 | tail -20
+
+# iOS (simulator)
+[ "$MOBILE_ECOSYSTEM" = "swift" ] && \
+  xcodebuild build -scheme "${_SCHEME:-App}" \
+    -destination "id=${SIMULATOR_ID}" \
+    -configuration Debug 2>&1 | grep -E "BUILD|error:|INSTALL" | tail -20
+xcrun simctl install "${SIMULATOR_ID}" "$(find ~/Library/Developer/Xcode/DerivedData -name '*.app' | head -1)" 2>/dev/null
+
+# Kotlin / Android
+[ "$MOBILE_ECOSYSTEM" = "kotlin" ] && \
+  ./gradlew assembleDebug 2>&1 | tail -20 && \
+  adb install -r "$(find . -name '*-debug.apk' | head -1)" 2>/dev/null
+```
+
+If build fails: output the last 50 lines of build output and stop. Do not proceed to testing.
+
+### Mobile Phase 2: Run Automated Tests
+
+## Mobile Test Run
+
+Run the mobile test suite using the command detected by the Mobile Ecosystem Detection step:
+
+```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
+# Re-read ecosystem from CLAUDE.md
+_MOBILE=$(grep -A1 "## Mobile Stack" CLAUDE.md 2>/dev/null | grep "ecosystem:" | cut -d: -f2 | tr -d ' ')
+_MOBILE="${_MOBILE:-unknown}"
+
+case "$_MOBILE" in
+  flutter)
+    flutter test --reporter expanded 2>&1 | tail -40
+    ;;
+  expo|react-native)
+    npx jest --passWithNoTests 2>&1 | tail -40
+    ;;
+  swift)
+    _SCHEME=$(ls *.xcodeproj 2>/dev/null | head -1 | sed 's/.xcodeproj//')
+    xcodebuild test       -scheme "${_SCHEME:-App}"       -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest'       -resultBundlePath /tmp/TestResults.xcresult       2>&1 | grep -E "Test (Case|Suite|session)|PASSED|FAILED|error:" | tail -40
+    ;;
+  kotlin)
+    ./gradlew test 2>&1 | tail -40
+    ;;
+  *)
+    echo "MOBILE_TEST_SKIP: ecosystem unknown or not mobile"
+    ;;
+esac
+```
+
+**Pass criteria:** All tests pass (exit code 0). For Swift, no `FAILED` in output.
+**On failure:** Report failing tests by name. Do NOT proceed to build/deploy steps.
+
+Report test pass/fail counts. For failures: list failing test names and first error message.
+
+### Mobile Phase 3: Launch and Screenshot
+
+```bash
+# iOS: launch and screenshot key screens
+xcrun simctl launch "${SIMULATOR_ID}" "${BUNDLE_ID}" 2>/dev/null
+sleep 3
+xcrun simctl io "${SIMULATOR_ID}" screenshot .gstack/qa-reports/screenshots/mobile-launch.png
+
+# Android
+adb shell am start -n "${BUNDLE_ID}/.MainActivity" 2>/dev/null
+sleep 3
+adb exec-out screencap -p > .gstack/qa-reports/screenshots/mobile-launch.png 2>/dev/null
+```
+
+Show screenshots using the Read tool so the user can see the app state.
+
+### Mobile Phase 4: Functional Flow Testing
+
+For each critical flow (authentication, main feature, settings, sign-out):
+
+1. Navigate to the flow using deep links or simulated taps (describe steps; execute manually or via Detox/flutter_test if configured)
+2. Take a screenshot at each step
+3. Report: does the flow complete without crashes or unexpected errors?
+
+```bash
+# Deep link testing
+xcrun simctl openurl "${SIMULATOR_ID}" "myapp://home" 2>/dev/null
+xcrun simctl io "${SIMULATOR_ID}" screenshot .gstack/qa-reports/screenshots/deeplink-home.png
+
+# Android deep link
+adb shell am start -a android.intent.action.VIEW -d "myapp://home" "${BUNDLE_ID}" 2>/dev/null
+```
+
+### Mobile Phase 5: Accessibility Audit
+
+```bash
+# iOS: check for accessibility labels via Xcode Accessibility Inspector (headless)
+# Note: Full VoiceOver testing requires manual interaction
+# Automated: run UITest with accessibilityIdentifier checks
+xcodebuild test -scheme "${_SCHEME:-App}UITests" \
+  -destination "id=${SIMULATOR_ID}" 2>&1 | grep -E "PASS|FAIL|error:" | head -20
+
+# Android: check for contentDescription via adb dumpsys
+adb shell uiautomator dump /sdcard/window_dump.xml 2>/dev/null
+adb pull /sdcard/window_dump.xml /tmp/window_dump.xml 2>/dev/null
+grep -o 'content-desc="[^"]*"' /tmp/window_dump.xml 2>/dev/null | head -20
+```
+
+Check:
+- Critical interactive elements have accessibility labels
+- Text sizes respond to Large Text accessibility setting
+- Sufficient color contrast (flag any UI elements with hardcoded low-contrast color pairs found in source)
+
+### Mobile Phase 6: Dark Mode and Device Sizes
+
+```bash
+# iOS: switch simulator to dark mode
+xcrun simctl ui "${SIMULATOR_ID}" appearance dark 2>/dev/null
+xcrun simctl io "${SIMULATOR_ID}" screenshot .gstack/qa-reports/screenshots/dark-mode.png
+xcrun simctl ui "${SIMULATOR_ID}" appearance light 2>/dev/null
+
+# Android: toggle dark mode
+adb shell cmd uimode night yes 2>/dev/null
+adb exec-out screencap -p > .gstack/qa-reports/screenshots/dark-mode.png 2>/dev/null
+adb shell cmd uimode night no 2>/dev/null
+```
+
+Show dark mode screenshots. Flag:
+- Text invisible against background
+- Icons missing dark-mode variants
+- Hardcoded colors that don't respond to color scheme
+
+**Mobile Health Score Rubric (replaces browser health score for mobile projects):**
+
+| Category | Weight | 10 | 7 | 4 | 0 |
+|----------|--------|-----|---|---|---|
+| App launch | 30% | Clean launch | Slow (>3s) | Crash on launch | Won't install |
+| Automated tests | 25% | All pass | >95% | >80% | <80% |
+| Deep links | 15% | All work | Most work | Some work | None work |
+| Accessibility | 15% | Full coverage | Most elements | Some coverage | None |
+| Dark mode | 15% | Fully adapted | Minor issues | Major issues | Broken |
+
+---
+
 ## Output Structure
 
 ```
@@ -1190,6 +1497,8 @@ Record baseline health score at end of Phase 6.
 ├── qa-report-{domain}-{YYYY-MM-DD}.md    # Structured report
 ├── screenshots/
 │   ├── initial.png                        # Landing page annotated screenshot
+│   ├── mobile-launch.png                  # App launch screenshot (mobile)
+│   ├── dark-mode.png                      # Dark mode screenshot (mobile)
 │   ├── issue-001-step-1.png               # Per-issue evidence
 │   ├── issue-001-result.png
 │   ├── issue-001-before.png               # Before fix (if fixed)

@@ -115,6 +115,77 @@ describe('SKILL.md command validation', () => {
   });
 });
 
+describe('Mobile skill validation', () => {
+  const mobileSkills = [
+    'mobile-init',
+    'store-compliance',
+    'mobile-ship',
+    'mobile-monitor',
+    'mobile-optimize',
+  ];
+
+  for (const skillName of mobileSkills) {
+    test(`${skillName}/SKILL.md exists and has required frontmatter`, () => {
+      const skill = path.join(ROOT, skillName, 'SKILL.md');
+      if (!fs.existsSync(skill)) return; // skip if not yet generated
+      const content = fs.readFileSync(skill, 'utf-8');
+      expect(content).toContain(`name: ${skillName}`);
+      expect(content).toContain('allowed-tools:');
+      expect(content).toContain('version:');
+    });
+
+    test(`${skillName}/SKILL.md.tmpl exists`, () => {
+      const tmpl = path.join(ROOT, skillName, 'SKILL.md.tmpl');
+      expect(fs.existsSync(tmpl)).toBe(true);
+    });
+
+    test(`${skillName}/SKILL.md.tmpl has valid frontmatter`, () => {
+      const tmpl = path.join(ROOT, skillName, 'SKILL.md.tmpl');
+      if (!fs.existsSync(tmpl)) return;
+      const content = fs.readFileSync(tmpl, 'utf-8');
+      expect(content).toContain(`name: ${skillName}`);
+      expect(content).toContain('allowed-tools:');
+      expect(content).toContain('{{PREAMBLE}}');
+    });
+  }
+
+  test('store-compliance/checklist.md exists', () => {
+    const checklist = path.join(ROOT, 'store-compliance', 'checklist.md');
+    expect(fs.existsSync(checklist)).toBe(true);
+    const content = fs.readFileSync(checklist, 'utf-8');
+    expect(content).toContain('BLOCKER');
+    expect(content).toContain('iOS App Store');
+    expect(content).toContain('Google Play');
+  });
+
+  test('mobile resolver module exports three functions', () => {
+    const resolverPath = path.join(ROOT, 'scripts', 'resolvers', 'mobile.ts');
+    expect(fs.existsSync(resolverPath)).toBe(true);
+    const content = fs.readFileSync(resolverPath, 'utf-8');
+    expect(content).toContain('generateMobileDetect');
+    expect(content).toContain('generateMobileTestRun');
+    expect(content).toContain('generateSimulatorSetup');
+  });
+
+  test('mobile resolvers are registered in index.ts', () => {
+    const indexPath = path.join(ROOT, 'scripts', 'resolvers', 'index.ts');
+    const content = fs.readFileSync(indexPath, 'utf-8');
+    expect(content).toContain('MOBILE_DETECT');
+    expect(content).toContain('MOBILE_TEST_RUN');
+    expect(content).toContain('SIMULATOR_SETUP');
+  });
+
+  test('root SKILL.md.tmpl has mobile routing rules', () => {
+    const tmpl = path.join(ROOT, 'SKILL.md.tmpl');
+    const content = fs.readFileSync(tmpl, 'utf-8');
+    expect(content).toContain('mobile-init');
+    expect(content).toContain('store-compliance');
+    expect(content).toContain('mobile-ship');
+    expect(content).toContain('mobile-monitor');
+    expect(content).toContain('mobile-optimize');
+  });
+});
+
 describe('Command registry consistency', () => {
   test('COMMAND_DESCRIPTIONS covers all commands in sets', () => {
     const allCmds = new Set([...READ_COMMANDS, ...WRITE_COMMANDS, ...META_COMMANDS]);

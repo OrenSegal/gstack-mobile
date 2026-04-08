@@ -183,6 +183,20 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   'journey-retro':          ['*/SKILL.md.tmpl', 'SKILL.md.tmpl', 'scripts/gen-skill-docs.ts'],
   'journey-design-system':  ['*/SKILL.md.tmpl', 'SKILL.md.tmpl', 'scripts/gen-skill-docs.ts'],
   'journey-visual-qa':      ['*/SKILL.md.tmpl', 'SKILL.md.tmpl', 'scripts/gen-skill-docs.ts'],
+
+  // Mobile skills — periodic (require device/simulator, non-deterministic)
+  'mobile-init-scaffold':        ['mobile-init/**', 'scripts/resolvers/mobile.ts'],
+  'mobile-init-expo':            ['mobile-init/**', 'scripts/resolvers/mobile.ts'],
+  'store-compliance-ios':        ['store-compliance/**', 'scripts/resolvers/mobile.ts'],
+  'store-compliance-android':    ['store-compliance/**', 'scripts/resolvers/mobile.ts'],
+  'mobile-ship-workflow':        ['mobile-ship/**', 'store-compliance/**', 'scripts/resolvers/mobile.ts'],
+  'mobile-monitor-crashlytics':  ['mobile-monitor/**', 'scripts/resolvers/mobile.ts'],
+  'mobile-optimize-aso':         ['mobile-optimize/**', 'scripts/resolvers/mobile.ts'],
+  'mobile-optimize-perf':        ['mobile-optimize/**', 'scripts/resolvers/mobile.ts'],
+  'mobile-detect-flutter':       ['scripts/resolvers/mobile.ts'],
+  'mobile-detect-expo':          ['scripts/resolvers/mobile.ts'],
+  'mobile-detect-swift':         ['scripts/resolvers/mobile.ts'],
+  'mobile-detect-kotlin':        ['scripts/resolvers/mobile.ts'],
 };
 
 /**
@@ -329,6 +343,20 @@ export const E2E_TIERS: Record<string, 'gate' | 'periodic'> = {
   'journey-retro': 'periodic',
   'journey-design-system': 'periodic',
   'journey-visual-qa': 'periodic',
+
+  // Mobile skills — periodic (require simulator/emulator or external services)
+  'mobile-init-scaffold': 'periodic',
+  'mobile-init-expo': 'periodic',
+  'store-compliance-ios': 'periodic',
+  'store-compliance-android': 'periodic',
+  'mobile-ship-workflow': 'periodic',
+  'mobile-monitor-crashlytics': 'periodic',
+  'mobile-optimize-aso': 'periodic',
+  'mobile-optimize-perf': 'periodic',
+  'mobile-detect-flutter': 'gate',    // Pure detection logic — no simulator needed
+  'mobile-detect-expo': 'gate',
+  'mobile-detect-swift': 'gate',
+  'mobile-detect-kotlin': 'gate',
 };
 
 /**

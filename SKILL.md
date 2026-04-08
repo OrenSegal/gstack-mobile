@@ -447,6 +447,11 @@ quality gates that produce better results than answering inline.
 - User asks for safety mode, careful mode → invoke `/careful` or `/guard`
 - User asks to restrict edits to a directory → invoke `/freeze` or `/unfreeze`
 - User asks to upgrade gstack → invoke `/gstack-upgrade`
+- User asks to create a new mobile app, iOS app, Android app, Flutter app, React Native app, Expo app → invoke `/mobile-init`
+- User asks about App Store compliance, Play Store guidelines, store review ready, ready to submit → invoke `/store-compliance`
+- User asks to submit to App Store, upload to TestFlight, release to Play Store, publish mobile app → invoke `/mobile-ship`
+- User asks to check crashes, monitor mobile app, crash reports, Crashlytics, Sentry alerts → invoke `/mobile-monitor`
+- User asks about ASO, app store optimization, startup time, binary size, battery drain, app too slow → invoke `/mobile-optimize`
 
 **Do NOT answer the user's question directly when a matching skill exists.** The skill
 provides a structured, multi-step workflow that is always better than an ad-hoc answer.

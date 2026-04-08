@@ -1,20 +1,25 @@
 ---
-name: benchmark
+name: mobile-optimize
 preamble-tier: 1
 version: 1.0.0
 description: |
-  Performance regression detection using the browse daemon. Establishes
-  baselines for page load times, Core Web Vitals, and resource sizes.
-  Compares before/after on every PR. Tracks performance trends over time.
-  Use when: "performance", "benchmark", "page speed", "lighthouse", "web vitals",
-  "bundle size", "load time". (gstack)
-  Voice triggers (speech-to-text aliases): "speed test", "check performance".
+  Mobile app optimization in two modes: ASO (App Store Optimization — keywords,
+  metadata, screenshots, competitive positioning) and Performance (startup time,
+  binary size, memory, battery usage). Default runs both. Each mode produces
+  prioritized recommendations with AUTO-FIX for non-content changes.
+  Use when: "optimize app", "ASO", "app store optimization", "app too slow",
+  "reduce app size", "battery optimization", "startup time", "improve ranking",
+  "increase downloads", "app store visibility".
+  Proactively suggest after stable release once metrics are available. (gstack)
+  Voice triggers (speech-to-text aliases): "app store optimization", "app performance", "optimize store listing".
 allowed-tools:
   - Bash
   - Read
   - Write
+  - Edit
   - Glob
   - AskUserQuestion
+  - WebSearch
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->
@@ -49,7 +54,7 @@ echo "TELEMETRY: ${_TEL:-off}"
 echo "TEL_PROMPTED: $_TEL_PROMPTED"
 mkdir -p ~/.gstack/analytics
 if [ "$_TEL" != "off" ]; then
-echo '{"skill":"benchmark","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","repo":"'$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || echo "unknown")'"}'  >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
+echo '{"skill":"mobile-optimize","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","repo":"'$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || echo "unknown")'"}'  >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
 fi
 # zsh-compatible: use find instead of glob to avoid NOMATCH error
 for _PF in $(find ~/.gstack/analytics -maxdepth 1 -name '.pending-*' 2>/dev/null); do
@@ -74,7 +79,7 @@ else
   echo "LEARNINGS: 0"
 fi
 # Session timeline: record skill start (local-only, never sent anywhere)
-~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"benchmark","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
+~/.claude/skills/gstack/bin/gstack-timeline-log '{"skill":"mobile-optimize","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
 # Check if CLAUDE.md has routing rules
 _HAS_ROUTING="no"
 if [ -f CLAUDE.md ] && grep -q "## Skill routing" CLAUDE.md 2>/dev/null; then
@@ -423,250 +428,19 @@ Then write a `## GSTACK REVIEW REPORT` section to the end of the plan file:
 file you are allowed to edit in plan mode. The plan file review report is part of the
 plan's living status.
 
-## SETUP (run this check BEFORE any browse command)
+# /mobile-optimize: ASO + Performance Optimization
 
-```bash
-_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-B=""
-[ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/gstack/browse/dist/browse" ] && B="$_ROOT/.claude/skills/gstack/browse/dist/browse"
-[ -z "$B" ] && B=~/.claude/skills/gstack/browse/dist/browse
-if [ -x "$B" ]; then
-  echo "READY: $B"
-else
-  echo "NEEDS_SETUP"
-fi
-```
+Two modes: `--aso` for store listing optimization, `--perf` for runtime performance.
+Default (no flag): run both.
 
-If `NEEDS_SETUP`:
-1. Tell the user: "gstack browse needs a one-time build (~10 seconds). OK to proceed?" Then STOP and wait.
-2. Run: `cd <SKILL_DIR> && ./setup`
-3. If `bun` is not installed:
-   ```bash
-   if ! command -v bun >/dev/null 2>&1; then
-     BUN_VERSION="1.3.10"
-     BUN_INSTALL_SHA="bab8acfb046aac8c72407bdcce903957665d655d7acaa3e11c7c4616beae68dd"
-     tmpfile=$(mktemp)
-     curl -fsSL "https://bun.sh/install" -o "$tmpfile"
-     actual_sha=$(shasum -a 256 "$tmpfile" | awk '{print $1}')
-     if [ "$actual_sha" != "$BUN_INSTALL_SHA" ]; then
-       echo "ERROR: bun install script checksum mismatch" >&2
-       echo "  expected: $BUN_INSTALL_SHA" >&2
-       echo "  got:      $actual_sha" >&2
-       rm "$tmpfile"; exit 1
-     fi
-     BUN_VERSION="$BUN_VERSION" bash "$tmpfile"
-     rm "$tmpfile"
-   fi
-   ```
-
-# /benchmark — Performance Regression Detection
-
-You are a **Performance Engineer** who has optimized apps serving millions of requests. You know that performance doesn't degrade in one big regression — it dies by a thousand paper cuts. Each PR adds 50ms here, 20KB there, and one day the app takes 8 seconds to load and nobody knows when it got slow.
-
-Your job is to measure, baseline, compare, and alert. You use the browse daemon's `perf` command and JavaScript evaluation to gather real performance data from running pages.
-
-## User-invocable
-When the user types `/benchmark`, run this skill.
-
-## Arguments
-- `/benchmark <url>` — full performance audit with baseline comparison
-- `/benchmark <url> --baseline` — capture baseline (run before making changes)
-- `/benchmark <url> --quick` — single-pass timing check (no baseline needed)
-- `/benchmark <url> --pages /,/dashboard,/api/health` — specify pages
-- `/benchmark --diff` — benchmark only pages affected by current branch
-- `/benchmark --trend` — show performance trends from historical data
-- `/benchmark --mobile` — mobile app performance benchmarking (startup, size, memory)
-
-## Instructions
-
-### Phase 1: Setup
-
-```bash
-eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null || echo "SLUG=unknown")"
-mkdir -p .gstack/benchmark-reports
-mkdir -p .gstack/benchmark-reports/baselines
-```
-
-### Phase 2: Page Discovery
-
-Same as /canary — auto-discover from navigation or use `--pages`.
-
-If `--diff` mode:
-```bash
-git diff $(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || gh repo view --json defaultBranchRef -q .defaultBranchRef.name 2>/dev/null || echo main)...HEAD --name-only
-```
-
-### Phase 3: Performance Data Collection
-
-For each page, collect comprehensive performance metrics:
-
-```bash
-$B goto <page-url>
-$B perf
-```
-
-Then gather detailed metrics via JavaScript:
-
-```bash
-$B eval "JSON.stringify(performance.getEntriesByType('navigation')[0])"
-```
-
-Extract key metrics:
-- **TTFB** (Time to First Byte): `responseStart - requestStart`
-- **FCP** (First Contentful Paint): from PerformanceObserver or `paint` entries
-- **LCP** (Largest Contentful Paint): from PerformanceObserver
-- **DOM Interactive**: `domInteractive - navigationStart`
-- **DOM Complete**: `domComplete - navigationStart`
-- **Full Load**: `loadEventEnd - navigationStart`
-
-Resource analysis:
-```bash
-$B eval "JSON.stringify(performance.getEntriesByType('resource').map(r => ({name: r.name.split('/').pop().split('?')[0], type: r.initiatorType, size: r.transferSize, duration: Math.round(r.duration)})).sort((a,b) => b.duration - a.duration).slice(0,15))"
-```
-
-Bundle size check:
-```bash
-$B eval "JSON.stringify(performance.getEntriesByType('resource').filter(r => r.initiatorType === 'script').map(r => ({name: r.name.split('/').pop().split('?')[0], size: r.transferSize})))"
-$B eval "JSON.stringify(performance.getEntriesByType('resource').filter(r => r.initiatorType === 'css').map(r => ({name: r.name.split('/').pop().split('?')[0], size: r.transferSize})))"
-```
-
-Network summary:
-```bash
-$B eval "(() => { const r = performance.getEntriesByType('resource'); return JSON.stringify({total_requests: r.length, total_transfer: r.reduce((s,e) => s + (e.transferSize||0), 0), by_type: Object.entries(r.reduce((a,e) => { a[e.initiatorType] = (a[e.initiatorType]||0) + 1; return a; }, {})).sort((a,b) => b[1]-a[1])})})()"
-```
-
-### Phase 4: Baseline Capture (--baseline mode)
-
-Save metrics to baseline file:
-
-```json
-{
-  "url": "<url>",
-  "timestamp": "<ISO>",
-  "branch": "<branch>",
-  "pages": {
-    "/": {
-      "ttfb_ms": 120,
-      "fcp_ms": 450,
-      "lcp_ms": 800,
-      "dom_interactive_ms": 600,
-      "dom_complete_ms": 1200,
-      "full_load_ms": 1400,
-      "total_requests": 42,
-      "total_transfer_bytes": 1250000,
-      "js_bundle_bytes": 450000,
-      "css_bundle_bytes": 85000,
-      "largest_resources": [
-        {"name": "main.js", "size": 320000, "duration": 180},
-        {"name": "vendor.js", "size": 130000, "duration": 90}
-      ]
-    }
-  }
-}
-```
-
-Write to `.gstack/benchmark-reports/baselines/baseline.json`.
-
-### Phase 5: Comparison
-
-If baseline exists, compare current metrics against it:
-
-```
-PERFORMANCE REPORT — [url]
-══════════════════════════
-Branch: [current-branch] vs baseline ([baseline-branch])
-
-Page: /
-─────────────────────────────────────────────────────
-Metric              Baseline    Current     Delta    Status
-────────            ────────    ───────     ─────    ──────
-TTFB                120ms       135ms       +15ms    OK
-FCP                 450ms       480ms       +30ms    OK
-LCP                 800ms       1600ms      +800ms   REGRESSION
-DOM Interactive     600ms       650ms       +50ms    OK
-DOM Complete        1200ms      1350ms      +150ms   WARNING
-Full Load           1400ms      2100ms      +700ms   REGRESSION
-Total Requests      42          58          +16      WARNING
-Transfer Size       1.2MB       1.8MB       +0.6MB   REGRESSION
-JS Bundle           450KB       720KB       +270KB   REGRESSION
-CSS Bundle          85KB        88KB        +3KB     OK
-
-REGRESSIONS DETECTED: 3
-  [1] LCP doubled (800ms → 1600ms) — likely a large new image or blocking resource
-  [2] Total transfer +50% (1.2MB → 1.8MB) — check new JS bundles
-  [3] JS bundle +60% (450KB → 720KB) — new dependency or missing tree-shaking
-```
-
-**Regression thresholds:**
-- Timing metrics: >50% increase OR >500ms absolute increase = REGRESSION
-- Timing metrics: >20% increase = WARNING
-- Bundle size: >25% increase = REGRESSION
-- Bundle size: >10% increase = WARNING
-- Request count: >30% increase = WARNING
-
-### Phase 6: Slowest Resources
-
-```
-TOP 10 SLOWEST RESOURCES
-═════════════════════════
-#   Resource                  Type      Size      Duration
-1   vendor.chunk.js          script    320KB     480ms
-2   main.js                  script    250KB     320ms
-3   hero-image.webp          img       180KB     280ms
-4   analytics.js             script    45KB      250ms    ← third-party
-5   fonts/inter-var.woff2    font      95KB      180ms
-...
-
-RECOMMENDATIONS:
-- vendor.chunk.js: Consider code-splitting — 320KB is large for initial load
-- analytics.js: Load async/defer — blocks rendering for 250ms
-- hero-image.webp: Add width/height to prevent CLS, consider lazy loading
-```
-
-### Phase 7: Performance Budget
-
-Check against industry budgets:
-
-```
-PERFORMANCE BUDGET CHECK
-════════════════════════
-Metric              Budget      Actual      Status
-────────            ──────      ──────      ──────
-FCP                 < 1.8s      0.48s       PASS
-LCP                 < 2.5s      1.6s        PASS
-Total JS            < 500KB     720KB       FAIL
-Total CSS           < 100KB     88KB        PASS
-Total Transfer      < 2MB       1.8MB       WARNING (90%)
-HTTP Requests       < 50        58          FAIL
-
-Grade: B (4/6 passing)
-```
-
-### Phase 8: Trend Analysis (--trend mode)
-
-Load historical baseline files and show trends:
-
-```
-PERFORMANCE TRENDS (last 5 benchmarks)
-══════════════════════════════════════
-Date        FCP     LCP     Bundle    Requests    Grade
-2026-03-10  420ms   750ms   380KB     38          A
-2026-03-12  440ms   780ms   410KB     40          A
-2026-03-14  450ms   800ms   450KB     42          A
-2026-03-16  460ms   850ms   520KB     48          B
-2026-03-18  480ms   1600ms  720KB     58          B
-
-TREND: Performance degrading. LCP doubled in 8 days.
-       JS bundle growing 50KB/week. Investigate.
-```
-
-### Phase 9: Save Report
-
-Write to `.gstack/benchmark-reports/{date}-benchmark.md` and `.gstack/benchmark-reports/{date}-benchmark.json`.
+**Parse the user's request:**
+- "ASO" / "app store optimization" / "ranking" / "keywords" → ASO mode only
+- "slow" / "startup" / "battery" / "size" / "memory" → Perf mode only
+- "optimize" / no qualifier → both modes
 
 ---
 
-## Mobile Benchmark Mode (`--mobile` or mobile ecosystem detected)
+## Setup
 
 ## Mobile Ecosystem Detection
 
@@ -775,90 +549,226 @@ Mobile-specific steps below do not apply — proceed with web/generic workflow.
 - min_android: (fill in: e.g. 24)
 ```
 
-If `--mobile` flag is present OR `MOBILE_ECOSYSTEM` is not `unknown`, run mobile
-performance collection instead of (or in addition to) web benchmarking.
-
-### Mobile Phase 1: Binary Size
-
-```bash
-# iOS IPA
-find . -name "*.ipa" 2>/dev/null | xargs -I{} sh -c 'echo "IPA: {}"; ls -lh {}'
-# Framework breakdown
-find . -name "*.ipa" 2>/dev/null | head -1 | xargs -I{} sh -c \
-  'unzip -l {} 2>/dev/null | grep -E "\.framework|\.dylib|Assets\.car" | sort -k3 -rn | head -15'
-
-# Android AAB / APK
-find . -name "*.aab" -o -name "*-release.apk" 2>/dev/null | \
-  xargs -I{} sh -c 'echo "Build: {}"; ls -lh {}'
-
-# Flutter: size analysis
-[ "$MOBILE_ECOSYSTEM" = "flutter" ] && \
-  flutter build apk --analyze-size --target-platform android-arm64 2>/dev/null | tail -20
-```
-
-### Mobile Phase 2: Cold Startup Time
-
-```bash
-_BUNDLE=$(grep "bundle_id:" CLAUDE.md 2>/dev/null | cut -d: -f2 | tr -d ' ')
-_SIM=$(xcrun simctl list devices booted 2>/dev/null | grep "iPhone" | head -1 | grep -oE '[A-F0-9-]{36}')
-
-# iOS cold startup
-if [ -n "$_SIM" ] && [ -n "$_BUNDLE" ]; then
-  xcrun simctl terminate "$_SIM" "$_BUNDLE" 2>/dev/null
-  sleep 2
-  time xcrun simctl launch "$_SIM" "$_BUNDLE" 2>&1
-fi
-
-# Android cold startup
-if adb devices 2>/dev/null | grep -q "device$" && [ -n "$_BUNDLE" ]; then
-  adb shell am force-stop "$_BUNDLE" 2>/dev/null
-  sleep 2
-  adb shell am start-activity -W -n "${_BUNDLE}/.MainActivity" 2>/dev/null | \
-    grep -E "TotalTime|WaitTime|ThisTime"
-fi
-```
-
-### Mobile Phase 3: Memory Snapshot
-
-```bash
-_BUNDLE=$(grep "bundle_id:" CLAUDE.md 2>/dev/null | cut -d: -f2 | tr -d ' ')
-
-# Android foreground memory
-adb shell dumpsys meminfo "$_BUNDLE" 2>/dev/null | \
-  grep -E "TOTAL:|Dalvik Heap|Native Heap" | head -5
-
-# iOS: approximate via vmmap on simulator process (complex — report as manual step)
-echo "iOS memory: use Xcode Memory Gauge or run 'leaks <app-pid>' in Instruments"
-```
-
-### Mobile Performance Budget
-
-```
-MOBILE PERFORMANCE BUDGET
-═════════════════════════
-Metric              Budget      Actual      Status
-────────            ──────      ──────      ──────
-Cold startup        < 2s        ?s          -
-Warm startup        < 600ms     ?ms         -
-iOS IPA size        < 50MB      ?MB         -
-Android AAB size    < 30MB      ?MB         -
-Memory (fg)         < 150MB     ?MB         -
-Test suite          < 60s       ?s          -
-```
-
-Fill in actual values from the measurements above. Compare against prior baseline
-in `.gstack/benchmark-reports/mobile-baseline.json` if present.
-
-If any metric exceeds budget: flag as FAIL and recommend `/mobile-optimize --perf`
-for root cause analysis and remediation.
+If `MOBILE_ECOSYSTEM=unknown`: output "This doesn't appear to be a mobile project."
+and stop.
 
 ---
 
-## Important Rules
+# Part A: ASO (App Store Optimization)
 
-- **Measure, don't guess.** Use actual performance.getEntries() data, not estimates.
-- **Baseline is essential.** Without a baseline, you can report absolute numbers but can't detect regressions. Always encourage baseline capture.
-- **Relative thresholds, not absolute.** 2000ms load time is fine for a complex dashboard, terrible for a landing page. Compare against YOUR baseline.
-- **Third-party scripts are context.** Flag them, but the user can't fix Google Analytics being slow. Focus recommendations on first-party resources.
-- **Bundle size is the leading indicator.** Load time varies with network. Bundle size is deterministic. Track it religiously.
-- **Read-only.** Produce the report. Don't modify code unless explicitly asked.
+## A1: Read Current Metadata
+
+```bash
+# iOS: Fastlane metadata
+ls fastlane/metadata/en-US/ 2>/dev/null
+cat fastlane/metadata/en-US/name.txt 2>/dev/null
+cat fastlane/metadata/en-US/subtitle.txt 2>/dev/null
+cat fastlane/metadata/en-US/keywords.txt 2>/dev/null
+cat fastlane/metadata/en-US/description.txt 2>/dev/null
+ls fastlane/screenshots/ 2>/dev/null
+
+# Android: Fastlane metadata
+ls fastlane/metadata/android/en-US/ 2>/dev/null
+cat fastlane/metadata/android/en-US/title.txt 2>/dev/null
+cat fastlane/metadata/android/en-US/short_description.txt 2>/dev/null
+cat fastlane/metadata/android/en-US/full_description.txt 2>/dev/null
+ls fastlane/metadata/android/en-US/images/ 2>/dev/null
+
+# Expo
+grep '"name"\|"description"\|"slug"' app.json 2>/dev/null | head -5
+```
+
+If no metadata files found: note that ASO metadata isn't tracked in the repo yet.
+Offer to create `fastlane/metadata/` structure.
+
+## A2: Competitive Keyword Research
+
+Use WebSearch for:
+1. `"<app category> app store keywords 2026"` — find high-volume keywords
+2. `"<app name> competitor" site:apps.apple.com OR site:play.google.com` — find top 3 competitors
+3. For each competitor found, search `"<competitor app> keywords"` — identify their strategy
+
+Report: top 10 candidate keywords with estimated relevance (high/medium/low) for the app.
+
+## A3: Metadata Audit
+
+Check against 2026 guidelines:
+
+**iOS:**
+- Title: ≤30 chars (AUTO-FIX: trim to limit) — include primary keyword
+- Subtitle: ≤30 chars — secondary keyword opportunity (often missed)
+- Keywords field: ≤100 chars, comma-separated, no spaces after commas (AUTO-FIX formatting)
+- Description: first 3 lines appear before "more" fold — most valuable real estate
+- Does description front-load the value prop? Or bury it in the 4th paragraph?
+
+**Android:**
+- Title: ≤50 chars — include primary keyword (more space than iOS)
+- Short description: ≤80 chars — appears on search results, crucial for CTR
+- Full description: first 167 chars appear above fold
+
+**Screenshots (both platforms):**
+- Count: iOS supports up to 10 per device size; Android up to 8
+- First screenshot: does it communicate the core value prop?
+- Text overlays: are screenshots "annotated" to show features? (Higher conversion)
+- Device frames: framed screenshots convert better
+- Portrait vs landscape: verify orientation matches app
+
+## A4: ASO Recommendations
+
+Produce prioritized list:
+
+```
+ASO OPTIMIZATION REPORT
+══════════════════════
+HIGH IMPACT (implement this sprint):
+  [1] Add subtitle — currently empty, wastes 30 chars of keyword real estate
+      Suggested: "<key benefit> · <secondary keyword>"
+  [2] Keyword field gaps — missing high-volume terms: X, Y, Z
+      Current keywords (87/100 chars): ...
+      Suggested keywords: (optimized for volume + relevance)
+
+MEDIUM IMPACT:
+  [3] First screenshot doesn't show the main feature — [description of what to change]
+  [4] Description buries value prop — move paragraph 4 to paragraph 1
+
+AUTO-FIXED:
+  ✅ Keyword formatting: removed spaces after commas
+  ✅ Title trimmed to 30 chars
+```
+
+AUTO-FIX formatting issues. ASK for content changes via AskUserQuestion.
+
+---
+
+# Part B: Performance Optimization
+
+## B1: Binary Size Analysis
+
+```bash
+# iOS: IPA size
+find . -name "*.ipa" 2>/dev/null | xargs -I{} sh -c 'echo "IPA: {}"; ls -lh {}'
+
+# iOS: framework breakdown
+find . -name "*.ipa" 2>/dev/null | head -1 | xargs -I{} sh -c \
+  'unzip -l {} 2>/dev/null | grep -E "\.framework|\.dylib|Assets" | sort -k3 -rn | head -20'
+
+# Android: AAB size
+find . -name "*.aab" 2>/dev/null | xargs -I{} sh -c 'echo "AAB: {}"; ls -lh {}'
+
+# Flutter: analyze size
+[ "$MOBILE_ECOSYSTEM" = "flutter" ] && \
+  flutter build apk --analyze-size --target-platform android-arm64 2>/dev/null | tail -30
+
+# React Native: bundle size
+[ "$MOBILE_ECOSYSTEM" = "react-native" ] || [ "$MOBILE_ECOSYSTEM" = "expo" ] && \
+  npx react-native bundle --entry-file index.js --bundle-output /tmp/bundle.js \
+    --platform android 2>/dev/null && ls -lh /tmp/bundle.js 2>/dev/null
+```
+
+**Targets:**
+- iOS IPA: <50MB (downloads require Wi-Fi above 200MB per carrier limit; app installs above 4GB are rejected)
+- Android AAB: <30MB baseline (app modules can be deferred via Play Feature Delivery)
+
+## B2: Cold Startup Time
+
+```bash
+# iOS: measure via simctl
+_BUNDLE=$(grep "bundle_id:" CLAUDE.md 2>/dev/null | cut -d: -f2 | tr -d ' ')
+_SIM=$(xcrun simctl list devices booted 2>/dev/null | grep "iPhone" | head -1 | grep -oE '[A-F0-9-]{36}')
+if [ -n "$_SIM" ] && [ -n "$_BUNDLE" ]; then
+  xcrun simctl terminate "$_SIM" "$_BUNDLE" 2>/dev/null
+  xcrun simctl launch --console "$_SIM" "$_BUNDLE" 2>&1 | head -20
+fi
+
+# Android: measure via adb
+_PKG=$(grep "bundle_id:" CLAUDE.md 2>/dev/null | cut -d: -f2 | tr -d ' ')
+if adb devices 2>/dev/null | grep -q "device$"; then
+  adb shell am force-stop "$_PKG" 2>/dev/null
+  adb shell am start-activity -W -n "${_PKG}/.MainActivity" 2>/dev/null | \
+    grep -E "TotalTime|WaitTime|ThisTime"
+fi
+
+# Flutter
+[ "$MOBILE_ECOSYSTEM" = "flutter" ] && \
+  echo "Run: flutter run --profile and enable performance overlay in DevTools"
+```
+
+**Targets:**
+- Cold launch <2s (OS kills apps that don't render in 20s; App Store measures perception)
+- Android TotalTime <1000ms (Play Store "cold start bad behavior" = >5000ms)
+
+## B3: Memory and Battery
+
+```bash
+# Android memory snapshot
+_PKG=$(grep "bundle_id:" CLAUDE.md 2>/dev/null | cut -d: -f2 | tr -d ' ')
+adb shell dumpsys meminfo "$_PKG" 2>/dev/null | grep -E "TOTAL|Dalvik|Native|Other" | head -10
+
+# Android battery stats (run after 5 minutes of app use)
+adb shell dumpsys batterystats --reset 2>/dev/null
+echo "Use the app for 5 minutes, then run:"
+echo "  adb shell dumpsys batterystats $_PKG | grep -E 'Computed drain|wake_lock|running'"
+
+# Check for common battery drain patterns
+grep -rn "Timer\|RunLoop\|DispatchQueue.main.asyncAfter\|setInterval\|NSTimer" \
+  --include="*.swift" --include="*.kt" --include="*.dart" --include="*.ts" \
+  . 2>/dev/null | grep -v "test\|spec" | head -10
+```
+
+## B4: Code-Level Optimizations
+
+```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
+# Swift: check for known performance anti-patterns
+# - Force cast on hot paths
+grep -rn " as! " --include="*.swift" . 2>/dev/null | grep -v "test\|Test" | head -10
+# - Main thread dispatch for UI already on main thread (noop overhead)
+grep -rn "DispatchQueue.main.async" --include="*.swift" . 2>/dev/null | head -5
+
+# Kotlin: check for common leaks
+# - Context stored in companion/static
+grep -rn "companion object.*Context\|object.*Context\|static.*Context" \
+  --include="*.kt" . 2>/dev/null | head -5
+# - Missing weak reference in coroutine callbacks
+grep -rn "GlobalScope\|runBlocking" --include="*.kt" . 2>/dev/null | head -5
+
+# Flutter: check for build method anti-patterns
+grep -rn "\.then\|await.*build\|setState.*heavy" --include="*.dart" . 2>/dev/null | head -5
+
+# RN: check for FlatList missing keyExtractor
+grep -rn "<FlatList" --include="*.tsx" --include="*.jsx" . 2>/dev/null | head -5
+grep -rn "keyExtractor" --include="*.tsx" --include="*.jsx" . 2>/dev/null | head -5
+```
+
+## B5: Performance Report
+
+```
+PERFORMANCE OPTIMIZATION REPORT
+═══════════════════════════════
+
+BINARY SIZE
+  iOS IPA:         XX MB  [TARGET: <50MB] ✅/⚠️/❌
+  Android AAB:     XX MB  [TARGET: <30MB] ✅/⚠️/❌
+  Largest frameworks: ...
+
+STARTUP TIME
+  iOS cold launch: X.Xs   [TARGET: <2s]  ✅/⚠️/❌
+  Android TotalTime: Xms  [TARGET: <1s]  ✅/⚠️/❌
+
+MEMORY
+  Android foreground: XX MB [TARGET: <150MB] ✅/⚠️/❌
+
+RECOMMENDATIONS (prioritized)
+  HIGH: [recommendation with file:line evidence]
+  MEDIUM: [recommendation]
+  LOW: [recommendation]
+```
+
+---
+
+## Final Output
+
+Combine ASO and Perf reports (if both modes run). Write to
+`.gstack/optimize-reports/{YYYY-MM-DD}-mobile-optimize.md`.
+
+AUTO-FIX changes commit: `perf(mobile): apply automated optimization fixes`

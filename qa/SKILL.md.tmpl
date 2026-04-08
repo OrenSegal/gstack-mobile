@@ -78,9 +78,21 @@ RECOMMENDATION: Choose A because uncommitted work should be preserved as a commi
 
 After the user chooses, execute their choice (commit or stash), then continue with setup.
 
-**Find the browse binary:**
+**Detect mobile ecosystem (before browser setup):**
+
+{{MOBILE_DETECT}}
+
+**If `MOBILE_ECOSYSTEM` is not `unknown`:** This is a mobile app. Skip browser-based
+QA (Phases 1-6 below use simulator/emulator instead of `$B`). Proceed to the
+**Mobile QA** section after setup.
+
+**Find the browse binary (web QA only — skip for pure mobile projects):**
 
 {{BROWSE_SETUP}}
+
+**Boot simulator / emulator (mobile QA):**
+
+{{SIMULATOR_SETUP}}
 
 **Check test framework (bootstrap if needed):**
 
@@ -119,6 +131,126 @@ Record baseline health score at end of Phase 6.
 
 ---
 
+## Mobile QA Phases (use when `MOBILE_ECOSYSTEM` is detected)
+
+Run these phases **instead of** the browser-based Phases 1-6 when `MOBILE_ECOSYSTEM` is not `unknown`.
+
+### Mobile Phase 1: Build and Install
+
+```bash
+# Flutter
+[ "$MOBILE_ECOSYSTEM" = "flutter" ] && flutter build apk --debug 2>&1 | tail -20
+[ "$MOBILE_ECOSYSTEM" = "flutter" ] && flutter install 2>&1 | tail -10
+
+# Expo / React Native — build dev client
+[ "$MOBILE_ECOSYSTEM" = "expo" ] && npx expo start --no-dev --minify &
+[ "$MOBILE_ECOSYSTEM" = "react-native" ] && npx react-native run-android --mode debug 2>&1 | tail -20
+
+# iOS (simulator)
+[ "$MOBILE_ECOSYSTEM" = "swift" ] && \
+  xcodebuild build -scheme "${_SCHEME:-App}" \
+    -destination "id=${SIMULATOR_ID}" \
+    -configuration Debug 2>&1 | grep -E "BUILD|error:|INSTALL" | tail -20
+xcrun simctl install "${SIMULATOR_ID}" "$(find ~/Library/Developer/Xcode/DerivedData -name '*.app' | head -1)" 2>/dev/null
+
+# Kotlin / Android
+[ "$MOBILE_ECOSYSTEM" = "kotlin" ] && \
+  ./gradlew assembleDebug 2>&1 | tail -20 && \
+  adb install -r "$(find . -name '*-debug.apk' | head -1)" 2>/dev/null
+```
+
+If build fails: output the last 50 lines of build output and stop. Do not proceed to testing.
+
+### Mobile Phase 2: Run Automated Tests
+
+{{MOBILE_TEST_RUN}}
+
+Report test pass/fail counts. For failures: list failing test names and first error message.
+
+### Mobile Phase 3: Launch and Screenshot
+
+```bash
+# iOS: launch and screenshot key screens
+xcrun simctl launch "${SIMULATOR_ID}" "${BUNDLE_ID}" 2>/dev/null
+sleep 3
+xcrun simctl io "${SIMULATOR_ID}" screenshot .gstack/qa-reports/screenshots/mobile-launch.png
+
+# Android
+adb shell am start -n "${BUNDLE_ID}/.MainActivity" 2>/dev/null
+sleep 3
+adb exec-out screencap -p > .gstack/qa-reports/screenshots/mobile-launch.png 2>/dev/null
+```
+
+Show screenshots using the Read tool so the user can see the app state.
+
+### Mobile Phase 4: Functional Flow Testing
+
+For each critical flow (authentication, main feature, settings, sign-out):
+
+1. Navigate to the flow using deep links or simulated taps (describe steps; execute manually or via Detox/flutter_test if configured)
+2. Take a screenshot at each step
+3. Report: does the flow complete without crashes or unexpected errors?
+
+```bash
+# Deep link testing
+xcrun simctl openurl "${SIMULATOR_ID}" "myapp://home" 2>/dev/null
+xcrun simctl io "${SIMULATOR_ID}" screenshot .gstack/qa-reports/screenshots/deeplink-home.png
+
+# Android deep link
+adb shell am start -a android.intent.action.VIEW -d "myapp://home" "${BUNDLE_ID}" 2>/dev/null
+```
+
+### Mobile Phase 5: Accessibility Audit
+
+```bash
+# iOS: check for accessibility labels via Xcode Accessibility Inspector (headless)
+# Note: Full VoiceOver testing requires manual interaction
+# Automated: run UITest with accessibilityIdentifier checks
+xcodebuild test -scheme "${_SCHEME:-App}UITests" \
+  -destination "id=${SIMULATOR_ID}" 2>&1 | grep -E "PASS|FAIL|error:" | head -20
+
+# Android: check for contentDescription via adb dumpsys
+adb shell uiautomator dump /sdcard/window_dump.xml 2>/dev/null
+adb pull /sdcard/window_dump.xml /tmp/window_dump.xml 2>/dev/null
+grep -o 'content-desc="[^"]*"' /tmp/window_dump.xml 2>/dev/null | head -20
+```
+
+Check:
+- Critical interactive elements have accessibility labels
+- Text sizes respond to Large Text accessibility setting
+- Sufficient color contrast (flag any UI elements with hardcoded low-contrast color pairs found in source)
+
+### Mobile Phase 6: Dark Mode and Device Sizes
+
+```bash
+# iOS: switch simulator to dark mode
+xcrun simctl ui "${SIMULATOR_ID}" appearance dark 2>/dev/null
+xcrun simctl io "${SIMULATOR_ID}" screenshot .gstack/qa-reports/screenshots/dark-mode.png
+xcrun simctl ui "${SIMULATOR_ID}" appearance light 2>/dev/null
+
+# Android: toggle dark mode
+adb shell cmd uimode night yes 2>/dev/null
+adb exec-out screencap -p > .gstack/qa-reports/screenshots/dark-mode.png 2>/dev/null
+adb shell cmd uimode night no 2>/dev/null
+```
+
+Show dark mode screenshots. Flag:
+- Text invisible against background
+- Icons missing dark-mode variants
+- Hardcoded colors that don't respond to color scheme
+
+**Mobile Health Score Rubric (replaces browser health score for mobile projects):**
+
+| Category | Weight | 10 | 7 | 4 | 0 |
+|----------|--------|-----|---|---|---|
+| App launch | 30% | Clean launch | Slow (>3s) | Crash on launch | Won't install |
+| Automated tests | 25% | All pass | >95% | >80% | <80% |
+| Deep links | 15% | All work | Most work | Some work | None work |
+| Accessibility | 15% | Full coverage | Most elements | Some coverage | None |
+| Dark mode | 15% | Fully adapted | Minor issues | Major issues | Broken |
+
+---
+
 ## Output Structure
 
 ```
@@ -126,6 +258,8 @@ Record baseline health score at end of Phase 6.
 ├── qa-report-{domain}-{YYYY-MM-DD}.md    # Structured report
 ├── screenshots/
 │   ├── initial.png                        # Landing page annotated screenshot
+│   ├── mobile-launch.png                  # App launch screenshot (mobile)
+│   ├── dark-mode.png                      # Dark mode screenshot (mobile)
 │   ├── issue-001-step-1.png               # Per-issue evidence
 │   ├── issue-001-result.png
 │   ├── issue-001-before.png               # Before fix (if fixed)

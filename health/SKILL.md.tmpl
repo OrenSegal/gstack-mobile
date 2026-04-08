@@ -43,6 +43,39 @@ listed there and skip auto-detection.
 
 If no `## Health Stack` section exists, auto-detect available tools:
 
+**First, detect mobile ecosystem (replaces web-centric tools when a mobile project is found):**
+
+{{MOBILE_DETECT}}
+
+If `MOBILE_ECOSYSTEM` is NOT `unknown`, the health stack uses mobile-specific tools
+instead of the web defaults. Skip the browser/web tool detection below and use
+the mobile tool table:
+
+| Category | Weight | Tool (per ecosystem) |
+|----------|--------|----------------------|
+| Type check | 25% | Swift: `xcodebuild build` / Kotlin: `./gradlew compileDebugKotlin` / Flutter: `flutter analyze` / RN+Expo: `npx tsc --noEmit` |
+| Lint | 20% | Swift: `swiftlint lint` / Kotlin: `./gradlew lint` / Flutter: `flutter analyze` / RN: `npx eslint src/` |
+| Tests | 30% | Swift: `xcodebuild test` / Kotlin: `./gradlew test` / Flutter: `flutter test` / RN+Expo: `npx jest --passWithNoTests` |
+| Dead code | 15% | Swift: `periphery scan` (if available) / Kotlin: `./gradlew detekt` / Flutter: `dart pub outdated` / RN: `npx knip` |
+| Dependency audit | 10% | Swift: `swift package show-dependencies` / Kotlin: `./gradlew dependencies` / Flutter: `flutter pub outdated` / RN: `npm audit` |
+
+Persist mobile health stack to `CLAUDE.md ## Health Stack` with a `mobile:` subsection:
+
+```markdown
+## Health Stack
+
+mobile:
+  - typecheck: flutter analyze
+  - lint: flutter analyze
+  - test: flutter test
+  - deadcode: flutter pub outdated
+  - depaudit: flutter pub outdated
+```
+
+---
+
+If `MOBILE_ECOSYSTEM=unknown`, auto-detect web/generic tools:
+
 ```bash
 # Type checker
 [ -f tsconfig.json ] && echo "TYPECHECK: tsc --noEmit"
