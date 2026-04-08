@@ -45,6 +45,70 @@ Fixing symptoms creates whack-a-mole debugging. Every fix that doesn't address r
 
 ---
 
+## Phase 0: Mobile Crash Detection (runs before Phase 1 when mobile context is detected)
+
+{{MOBILE_DETECT}}
+
+If `MOBILE_ECOSYSTEM` is not `unknown` AND the user provided a crash report or stack
+trace, run this mobile-specific triage first:
+
+### Crash Symbolication
+
+**iOS:** If the stack trace contains memory addresses (e.g., `0x000000010012345`),
+symbolicate using dSYM:
+
+```bash
+# Find dSYM for the relevant build
+find ~/Library/Developer/Xcode/Archives -name "*.dSYM" 2>/dev/null | head -5
+find . -name "*.dSYM" 2>/dev/null | head -5
+
+# Symbolicate an address (replace APP_PATH, LOAD_ADDR, CRASH_ADDR)
+xcrun atos \
+  -arch arm64 \
+  -o "AppName.app.dSYM/Contents/Resources/DWARF/AppName" \
+  -l <load_address> \
+  <crash_address>
+```
+
+If dSYM not available locally: "dSYM not found locally. Check Xcode Organizer
+(`Window → Organizer → Archives`) or Firebase Crashlytics (`Firebase Console → Crashlytics`)
+for the symbol file for build version X.Y.Z (build N)."
+
+**Flutter:** Symbolicate Dart crash reports:
+```bash
+flutter symbolize \
+  -i <crash_report_file> \
+  -d build/app/outputs/symbols/ 2>/dev/null || echo "No symbol file found"
+```
+
+**Android:** Symbolicate native crashes:
+```bash
+# Find symbols archive
+find . -name "*.symbols" -o -name "native-debug-symbols.zip" 2>/dev/null | head -3
+# Symbolicate with ndk-stack
+adb logcat 2>/dev/null | ndk-stack -sym app/build/intermediates/merged_native_libs/release/ 2>/dev/null | head -30
+```
+
+### Mobile Simulator Reproduction
+
+After symbolication, attempt to reproduce on simulator/emulator:
+
+```bash
+# iOS: install and reproduce
+_SIM=$(xcrun simctl list devices booted 2>/dev/null | grep "iPhone" | head -1 | grep -oE '[A-F0-9-]{36}')
+[ -n "$_SIM" ] && xcrun simctl install "$_SIM" "$(find ~/Library/Developer/Xcode/DerivedData -name '*.app' | head -1)" 2>/dev/null
+[ -n "$_SIM" ] && xcrun simctl launch --console "$_SIM" "${BUNDLE_ID}" 2>&1 | tee /tmp/crash-repro.log | tail -30
+
+# Android: reproduce and capture logcat
+adb shell am force-stop "$_BUNDLE" 2>/dev/null
+adb logcat -c 2>/dev/null  # clear logcat
+adb shell am start -n "${_BUNDLE}/.MainActivity" 2>/dev/null
+sleep 5
+adb logcat -d -v time 2>/dev/null | grep -A 30 "FATAL EXCEPTION\|ANR in\|crash" | head -50
+```
+
+---
+
 ## Phase 1: Root Cause Investigation
 
 Gather context before forming any hypothesis.
@@ -104,6 +168,12 @@ Check if this bug matches a known pattern:
 | Integration failure | Timeout, unexpected response | External API calls, service boundaries |
 | Configuration drift | Works locally, fails in staging/prod | Env vars, feature flags, DB state |
 | Stale cache | Shows old data, fixes on cache clear | Redis, CDN, browser cache, Turbo |
+| **Retain cycle (Swift)** | Memory grows, `deinit` never called | Closures capturing `self` without `[weak self]` |
+| **Context leak (Android)** | Memory grows, `onDestroy` never fires | Activity/Fragment stored in static/singleton |
+| **Main thread violation** | ANR / UI freeze | Network or disk I/O on main thread |
+| **Lifecycle bug** | Crash after backgrounding/foregrounding | Unregistered observer, released resource accessed |
+| **OOM (Android)** | `OutOfMemoryError` | Bitmap loading without `inSampleSize`, bitmap cache |
+| **Thread safety (Flutter)** | Crash in isolate | `setState` called from background isolate |
 
 Also check:
 - `TODOS.md` for related known issues
