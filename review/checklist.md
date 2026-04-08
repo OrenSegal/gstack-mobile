@@ -119,6 +119,60 @@ To do this: use Grep to find all references to the sibling values (e.g., grep fo
 
 ---
 
+## Mobile Safety (apply when mobile ecosystem detected)
+
+> Check these categories when the diff touches `.swift`, `.kt`, `.dart`, or `.tsx`/`.jsx` (React Native) files,
+> or when `CLAUDE.md` has a `## Mobile Stack` section. These are Pass 2 (INFORMATIONAL) unless
+> explicitly marked CRITICAL.
+
+### Swift Memory Management
+
+- **Retain cycles** (CRITICAL): Closure capturing `self` without `[weak self]` or `[unowned self]` where
+  `self` is a reference type (class). Common in: `DispatchQueue.main.async`, `NotificationCenter.addObserver`,
+  `URLSession.dataTask`, completion handlers stored as properties.
+  Fix: `[weak self] in guard let self else { return }` pattern
+- **Force-unwrap on production paths**: `!` on optionals in code reachable by users (not tests/previews). Flag
+  if the unwrapped value comes from user input, network responses, or dynamic lookups.
+  Fix: Use `guard let`, `if let`, or `?? defaultValue`
+- **Main thread violations**: `URLSession`, file I/O, or heavy computation called synchronously on the main thread.
+  `@Published` property mutations inside URLSession callbacks without `DispatchQueue.main.async`.
+  Fix: Use `async/await` with `@MainActor` or explicit `DispatchQueue.main.async { }`
+
+### Kotlin / Android
+
+- **Context leaks** (CRITICAL): `Activity` or `Fragment` stored in a `companion object`, `object`, or singleton.
+  ViewModel storing a Context reference (use `ApplicationContext` if needed).
+  Fix: Use `ApplicationContext`, `WeakReference<Activity>`, or pass context as a function parameter
+- **Missing `lifecycleScope`**: Coroutines launched with `GlobalScope` (outlives the component) or
+  `CoroutineScope(Dispatchers.Main)` without cancellation. Inside `Fragment`/`Activity`/`ViewModel`:
+  use `lifecycleScope`, `viewModelScope`, or `repeatOnLifecycle`.
+  Fix: Replace `GlobalScope.launch` with `lifecycleScope.launch`
+- **Unregistered receivers**: `BroadcastReceiver` registered in `onResume` or `onCreate` but NOT unregistered
+  in the matching `onPause` or `onDestroy`.
+  Fix: Mirror register/unregister in lifecycle pair
+
+### Mobile API Key Exposure
+
+- **Hardcoded secrets**: API keys, tokens, or secrets in:
+  - `res/values/strings.xml` (Android) — visible after decompilation
+  - `Info.plist` or `GoogleService-Info.plist` (iOS) — bundled in IPA, extractable
+  - Source code string literals in non-test files
+  Fix: Use environment-specific config files (never committed), runtime secret injection, or a secrets manager
+
+### Cross-Platform (Flutter / React Native)
+
+- **Unsafe MethodChannel calls** (Flutter): `MethodChannel.invokeMethod` without `.catch` or `on PlatformException`.
+  Platform channels can throw on any invocation. Always handle the `PlatformException`.
+- **State mutations off main isolate** (Flutter): Calling `setState` or modifying `ChangeNotifier` from a
+  background isolate or async callback without `SchedulerBinding.instance.addPostFrameCallback`.
+- **Missing `keyExtractor`** (React Native): `<FlatList>` or `<SectionList>` without a `keyExtractor` prop
+  causes React to fall back to index-based keys, breaking list re-renders on insert/delete.
+- **Synchronous heavy operations in `build()`** (Flutter): Reading files, making network calls, or running
+  loops inside `Widget.build()`. These run on every frame.
+  Fix: Move to `initState`, `FutureBuilder`, `StreamBuilder`, or a state management layer
+
+---
+
 ## Severity Classification
 
 ```

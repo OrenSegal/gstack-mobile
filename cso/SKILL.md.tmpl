@@ -71,6 +71,16 @@ The bash blocks throughout this skill show WHAT patterns to search for, not HOW 
 
 Before hunting for bugs, detect the tech stack and build an explicit mental model of the codebase. This phase changes HOW you think for the rest of the audit.
 
+**Mobile stack detection (add to stack detection block):**
+```bash
+setopt +o nomatch 2>/dev/null || true  # zsh compat
+[ -f pubspec.yaml ] && grep -q "flutter:" pubspec.yaml 2>/dev/null && echo "STACK: Flutter"
+[ -f package.json ] && grep -q '"react-native"' package.json 2>/dev/null && echo "STACK: React Native"
+[ -f eas.json ] && echo "STACK: Expo"
+ls *.xcodeproj *.xcworkspace 2>/dev/null | grep -q . && echo "STACK: Swift/iOS"
+[ -f android/app/build.gradle ] && echo "STACK: Kotlin/Android"
+```
+
 **Stack detection:**
 ```bash
 ls package.json tsconfig.json 2>/dev/null && echo "STACK: Node/TypeScript"
@@ -147,6 +157,15 @@ INFRASTRUCTURE SURFACE
   IaC configs:           N
   Deploy targets:        N
   Secret management:     [env vars | KMS | vault | unknown]
+
+MOBILE SURFACE (if mobile stack detected)
+  Deep link handlers:    N (URL schemes, universal links, App Links)
+  JavaScript bridges:    N (WKWebView, WebView, RN bridge, Flutter MethodChannel)
+  Background tasks:      N (BGTaskScheduler, WorkManager, BGFetch)
+  Local storage types:   N (Keychain, EncryptedSharedPreferences, SQLite, Core Data, AsyncStorage)
+  Certificate pinning:   [configured | missing]
+  Exported components:   N (Android: exported Activities, Receivers, Providers without permission)
+  OTA update mechanism:  [none | Expo Updates | CodePush | custom]
 ```
 
 ### Phase 2: Secrets Archaeology
@@ -351,6 +370,104 @@ See **Phase 4 (CI/CD Pipeline Security)** for pipeline protection analysis.
 - URL construction from user input?
 - Internal service reachability from user-controlled URLs?
 - Allowlist/blocklist enforcement on outbound requests?
+
+### Phase 9.5: OWASP Mobile Top 10 (MASVS 2.1) — skip if no mobile stack detected
+
+When a mobile stack is detected in Phase 0, run these mobile-specific checks.
+Use the Grep tool scoped to `*.swift`, `*.kt`, `*.dart`, `*.tsx`, `*.jsx`,
+`Info.plist`, `AndroidManifest.xml`, `build.gradle`, `build.gradle.kts`, `pubspec.yaml`.
+
+#### M1: Improper Credential Usage
+- Hardcoded credentials, API keys, or tokens in source code or config files
+- Grep: `password\s*=\s*"`, `api_key\s*=\s*"`, `secret\s*=\s*"`, `token\s*=\s*"` in non-test files
+- Check `Info.plist` and `strings.xml` for embedded credentials
+- Severity: CRITICAL if found
+
+#### M2: Inadequate Supply Chain Security
+- Check `Podfile.lock`, `Package.resolved`, `pubspec.lock`, `package-lock.json` for pinned versions
+- Missing lock files = unpinned dependencies = supply chain risk
+- Check for known vulnerable package versions in dependency files
+- Check for CocoaPods specs from http:// (not https://) sources in `Podfile`
+- Severity: HIGH if lock files missing, MEDIUM for unpinned major versions
+
+#### M3: Insecure Authentication / Authorization
+- Biometric auth results not cryptographically bound: check if `LAContext.evaluatePolicy` result alone
+  gates sensitive operations without a Keychain-backed check
+- JWT tokens stored in `UserDefaults` / `SharedPreferences` instead of Keychain / EncryptedSharedPreferences
+- Missing re-authentication before sensitive operations (transfer, delete account, view full card number)
+- Grep: `UserDefaults.*token\|UserDefaults.*jwt\|SharedPreferences.*token`
+- Severity: HIGH
+
+#### M4: Insufficient Input/Output Validation
+- Deep link handler input not validated: grep for URL scheme handlers (`application(_:open:options:)`,
+  `onNewIntent`) that parse parameters without validation or encoding
+- `WKWebView` / `WebView` loading URLs from user-controlled data without allowlist
+- SQL injection via SQLite direct queries (not ORM): grep for string interpolation in SQL
+- Severity: CRITICAL for injection, HIGH for deep link bypass
+
+#### M5: Insecure Communication
+- iOS: `NSAllowsArbitraryLoads = true` in `Info.plist` disables ATS (App Transport Security)
+- Android: `android:usesCleartextTraffic="true"` in `AndroidManifest.xml`
+- SSL pinning: check if any certificate pinning is configured; note absence as MEDIUM
+- Grep: `NSAllowsArbitraryLoads`, `usesCleartextTraffic`, `setHostnameVerifier`, `TrustAllCerts`
+- Severity: HIGH for disabled TLS enforcement, MEDIUM for missing pinning
+
+#### M6: Inadequate Privacy Controls
+- Clipboard access without user awareness: grep for `UIPasteboard.general`, `ClipboardManager`
+  in non-clipboard-manager contexts
+- Screenshot prevention: check for `windowSecureTextEntry` or `FLAG_SECURE` on screens showing
+  sensitive data (banking, health, card numbers)
+- Excessive permissions: see Phase 1 mobile surface — permissions not needed by core features
+- Severity: MEDIUM
+
+#### M7: Insufficient Binary Protections
+- iOS: `android:debuggable` equivalent — check Xcode build settings for `DEBUG_INFORMATION_FORMAT`
+  set to `dwarf-with-dsym` in Release (correct) vs debug settings leaking into production
+- Android: `android:debuggable="true"` in `AndroidManifest.xml` production build
+- Jailbreak/root detection: note absence (not a blocker, but worth flagging)
+- Grep: `android:debuggable="true"` in manifests
+- Severity: HIGH for debuggable production builds
+
+#### M8: Security Misconfiguration
+- Android exported components without `android:permission`: Activities, Services, Receivers
+  with `android:exported="true"` but no permission requirement
+- iOS URL scheme handlers that don't validate the calling app (universal links are safer)
+- Firebase / cloud config files checked in with real project IDs (flag GoogleService-Info.plist,
+  google-services.json — these are semi-public but shouldn't have overly permissive rules)
+- Severity: HIGH for exported components, MEDIUM for Firebase config
+
+#### M9: Insecure Data Storage
+- Sensitive data in `UserDefaults` / `SharedPreferences` (not encrypted):
+  grep for `UserDefaults.*set\|UserDefaults.*string` with values that look like tokens, PII
+- Unencrypted SQLite databases containing PII: check for direct SQLite usage without SQLCipher
+- Log statements printing sensitive data: grep for `print(.*password\|NSLog.*token\|Log.d.*email`
+- Temp files with sensitive data: grep for `NSTemporaryDirectory`, `getCacheDir` in auth flows
+- Severity: CRITICAL for passwords/tokens in plaintext storage, HIGH for PII
+
+#### M10: Insufficient Cryptography
+- Weak/deprecated algorithms:
+  - Grep: `MD5\|SHA1\|DES\|RC4\|ECB` in crypto contexts
+  - Grep: `kCCAlgorithmDES\|kCCAlgorithm3DES\|Cipher.getInstance.*ECB`
+- Hardcoded initialization vectors (IVs): grep for `IV\s*=\s*"` or fixed byte arrays used as IVs
+- Predictable random number generation for security uses: grep for `Random()` instead of
+  `SecRandomCopyBytes` (iOS) or `SecureRandom` (Android) in auth/token generation
+- Severity: HIGH for MD5/SHA1 in security contexts, CRITICAL for ECB mode, HIGH for hardcoded IVs
+
+**Mobile findings output** — append to the Phase 9 OWASP report section:
+```
+OWASP MOBILE TOP 10 (MASVS 2.1)
+════════════════════════════════
+M1 Credential Usage:      PASS | FAIL (evidence)
+M2 Supply Chain:          PASS | FAIL
+M3 Auth/Authorization:    PASS | FAIL
+M4 Input Validation:      PASS | FAIL
+M5 Communication:         PASS | FAIL (ATS: enabled/disabled, pinning: yes/no)
+M6 Privacy Controls:      PASS | FAIL
+M7 Binary Protections:    PASS | FAIL (debuggable: yes/no)
+M8 Misconfiguration:      PASS | FAIL
+M9 Data Storage:          PASS | FAIL
+M10 Cryptography:         PASS | FAIL
+```
 
 ### Phase 10: STRIDE Threat Model
 
