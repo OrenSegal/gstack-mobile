@@ -1,3 +1,41 @@
+# gstack-mobile
+
+A fork of [garrytan/gstack](https://github.com/garrytan/gstack) that adds mobile app support, maintained by [Oren Segal](https://github.com/OrenSegal).
+
+gstack is Garry Tan's work, MIT licensed. What this fork adds is listed below. Everything under "Upstream README" is his text, unmodified. The fork was last synced with upstream on 2026-04-07 (gstack 0.15.16.0), so it is behind current gstack. If you do not need the mobile skills, use upstream.
+
+## What this fork adds
+
+Five skills for the mobile app lifecycle:
+
+| Skill | What it does |
+|-------|--------------|
+| `/mobile-init` | Scaffolds a mobile project (Swift/iOS, Kotlin/Android, Flutter, React Native/Expo) with architecture directories, environment configs, test setup and GitHub Actions CI. |
+| `/store-compliance` | Audits an app against App Store and Google Play rules before submission: Privacy Manifest, permission usage descriptions, IAP requirements, AI data disclosure, target SDK, Data Safety. Reports PASS / FAIL / NEEDS_REVIEW with file and line. |
+| `/mobile-ship` | Builds a signed release binary and submits it to App Store Connect (TestFlight, then production) or Google Play Console (internal track, staged rollout, production). Requires a passing `/store-compliance` report. |
+| `/mobile-monitor` | Post-launch checks: triages crash reports from Crashlytics, Sentry or Datadog, and watches store ratings and reviews. |
+| `/mobile-optimize` | Two modes: store listing (keywords, metadata, screenshots) and performance (startup time, binary size, memory, battery). |
+
+Mobile sections in eight existing gstack skills: `/qa`, `/review`, `/ship`, `/cso`, `/benchmark`, `/canary`, `/health` and `/investigate`.
+
+A template resolver (`scripts/resolvers/mobile.ts`) that the skills above share: it detects Flutter, Expo, React Native, Swift or Kotlin projects, picks the matching test command, and boots an iOS simulator or Android emulator.
+
+## Install
+
+Same as upstream, but clone this repository:
+
+```bash
+git clone --single-branch --depth 1 https://github.com/OrenSegal/gstack-mobile.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup
+```
+
+The install commands in the upstream README below clone `garrytan/gstack`, which does not include the mobile skills.
+
+---
+
+## Upstream README
+
+Everything from here down is the README of [garrytan/gstack](https://github.com/garrytan/gstack) as of the sync date above. "I" in the text below is Garry Tan, not the maintainer of this fork.
+
 # gstack
 
 > "I don't think I've typed like a line of code probably since December, basically, which is an extremely large change." — [Andrej Karpathy](https://fortune.com/2026/03/21/andrej-karpathy-openai-cofounder-ai-agents-coding-state-of-psychosis-openclaw/), No Priors podcast, March 2026
